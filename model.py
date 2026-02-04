@@ -14,7 +14,7 @@ class MPO_Network(nn.Module):
         # 如果你只用了5个因子+VIX+利率等，要确保列数对齐。
         # 这里建议写死或者从 data.shape 获取，暂时按 fetch_data 的默认列数 13
         self.lstm = nn.LSTM(
-            input_size=13, 
+            input_size=cfg.INPUT_FEATURE_DIM, 
             hidden_size=cfg.HIDDEN_DIM,
             num_layers=cfg.NUM_LAYERS,
             batch_first=True,

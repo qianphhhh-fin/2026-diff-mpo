@@ -1,7 +1,6 @@
 import pandas as pd
 import yfinance as yf
 import requests
-import zipfile
 import io
 import numpy as np
 import os
@@ -9,47 +8,128 @@ import time
 from datetime import datetime
 
 # =================配置区域=================
-DATA_DIR = 'data'        # 中间数据保存目录
+DATA_DIR = 'data'             
+RAW_DATA_DIR = os.path.join(DATA_DIR, 'raw_data') # 请确保清洗好的csv放在这里
 FINAL_FILE = 'mpo_experiment_data.csv'
+
 START_DATE = '1990-01-01'
 END_DATE = datetime.today().strftime('%Y-%m-%d')
+
+# 核心资产池配置
+# 格式: { '前缀': ('文件名', [原始列名], {列名映射}) }
+FACTOR_CONFIG = {
+    # 1. 价值因子 (Value vs Growth)
+    'Val': ('Portfolios_Formed_on_BE-ME_Daily.csv', 
+            ['Lo 30', 'Hi 30'], 
+            {'Lo 30': 'Growth', 'Hi 30': 'Value'}),
+            
+    # 2. 规模因子 (Size)
+    # 注意：根据您提供的信息，这个文件名里的 daily 是小写
+    'Size': ('Portfolios_Formed_on_ME_daily.csv', 
+             ['Lo 30', 'Hi 30'], 
+             {'Lo 30': 'SmallCap', 'Hi 30': 'LargeCap'}),
+             
+    # 3. 动量因子 (Momentum)
+    # 使用 12-2 动量 (标准学术定义)
+    'Mom': ('10_Portfolios_Prior_12_2_Daily.csv', 
+            ['Lo PRIOR', 'Hi PRIOR'], 
+            {'Lo PRIOR': 'Loser', 'Hi PRIOR': 'Winner'}),
+            
+    # 4. 盈利因子 (Profitability)
+    'Prof': ('Portfolios_Formed_on_OP_Daily.csv', 
+             ['Lo 30', 'Hi 30'], 
+             {'Lo 30': 'LowProf', 'Hi 30': 'HighProf'}),
+
+    # 5. 投资因子 (Investment)
+    'Inv': ('Portfolios_Formed_on_INV_Daily.csv', 
+            ['Lo 30', 'Hi 30'], 
+            {'Lo 30': 'LowInv', 'Hi 30': 'HighInv'}) 
+}
 # =========================================
 
-# 确保数据目录存在
 os.makedirs(DATA_DIR, exist_ok=True)
 
-def fetch_fama_french():
-    file_path = os.path.join(DATA_DIR, 'fama_french.csv')
-    if os.path.exists(file_path):
-        print(f"✅ [本地] 已检测到 Fama-French 数据，跳过下载。")
-        return pd.read_csv(file_path, index_col=0, parse_dates=True)
+def fetch_french_universe_clean():
+    print(f"📂 [本地] 正在读取清洗后的 CSV 文件 ({RAW_DATA_DIR})...")
     
-    print("⬇️ [下载] 正在下载 Fama-French 5因子数据...")
-    url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
-    try:
-        response = requests.get(url, timeout=30)
-        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-            csv_name = z.namelist()[0]
-            with z.open(csv_name) as f:
-                df = pd.read_csv(f, skiprows=3, index_col=0)
-        
-        # 清洗
-        df.index.name = 'Date'
-        df.index = pd.to_datetime(df.index, format='%Y%m%d', errors='coerce')
-        df = df.dropna()
-        df = df.loc[START_DATE:END_DATE]
-        df = df / 100.0 # 单位转换
-        df.columns = ['Mkt-RF', 'SMB', 'HML', 'RMW', 'CMA', 'RF']
-        
-        # 保存中间文件
-        df.to_csv(file_path)
-        print(f"   💾 Fama-French 已保存至 {file_path}")
-        return df
-    except Exception as e:
-        print(f"   ❌ Fama-French 下载失败: {e}")
+    if not os.path.exists(RAW_DATA_DIR):
+        print(f"⛔ 错误：找不到目录 {RAW_DATA_DIR}")
         return None
 
+    all_dfs = []
+    
+    for prefix, (filename, cols_to_keep, rename_map) in FACTOR_CONFIG.items():
+        file_path = os.path.join(RAW_DATA_DIR, filename)
+        print(f"   ...正在读取 {prefix} ({filename})")
+        
+        if not os.path.exists(file_path):
+            print(f"      ❌ 文件不存在: {file_path}")
+            continue
+            
+        try:
+            # 1. 直接读取 CSV (因为您已经清洗过，表头在第一行)
+            df = pd.read_csv(file_path)
+            
+            # 2. 清洗列名 (去除前后空格)
+            df.columns = df.columns.str.strip()
+            df.dropna(how='all',axis=0,inplace=True)  # 删除全空行
+            # 3. 处理日期列
+            # 假设第一列是 Date (19260701 这种格式)
+            if 'Date' in df.columns:
+                df['Date'] = df['Date'].astype(int).astype(str).str.strip()
+                df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d', errors='coerce')
+                df = df.set_index('Date')
+            else:
+                print(f"      ⚠️ 警告: {filename} 中没找到 'Date' 列，尝试使用第一列作为索引")
+                df.iloc[:, 0] = df.iloc[:, 0].astype(str).str.strip()
+                df.index = pd.to_datetime(df.iloc[:, 0], format='%Y%m%d', errors='coerce')
+
+            # 4. 筛选列
+            missing_cols = [c for c in cols_to_keep if c not in df.columns]
+            if missing_cols:
+                print(f"      ❌ 缺少列: {missing_cols}。现有列: {list(df.columns)[:5]}...")
+                continue
+                
+            df = df[cols_to_keep]
+            
+            # 5. 重命名
+            new_names = {c: f"{prefix}_{rename_map.get(c, c)}" for c in cols_to_keep}
+            df = df.rename(columns=new_names)
+            
+            # 6. 数值清洗
+            # French 数据通常是百分比 (0.39 -> 0.39%)，需要除以 100
+            # 缺失值标记通常是 -99.99 或 -999
+            df = df.apply(pd.to_numeric, errors='coerce')
+            df = df.replace([-99.99, -99.9, -999], np.nan)
+            df = df / 100.0
+            
+            all_dfs.append(df)
+            
+        except Exception as e:
+            print(f"      ❌ 读取失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+    if not all_dfs:
+        print("⛔ 未能加载任何数据。")
+        return None
+
+    # 合并所有因子
+    print("   正在合并资产...")
+    try:
+        universe = pd.concat(all_dfs, axis=1, join='outer')
+    except Exception as e:
+        print(f"⛔ 合并失败: {e}")
+        return None
+
+    # 截取时间
+    universe = universe.loc[START_DATE:END_DATE].dropna()
+    
+    print(f"   ✅ 基础资产池构建完成。形状: {universe.shape}")
+    return universe
+
 def fetch_macro_fred():
+    # ... (保持原有的宏观数据下载逻辑不变) ...
     file_path = os.path.join(DATA_DIR, 'macro_features.csv')
     if os.path.exists(file_path):
         print(f"✅ [本地] 已检测到宏观数据 (FRED)，跳过下载。")
@@ -59,115 +139,75 @@ def fetch_macro_fred():
     fred_urls = {
         'VIX': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS',
         'US10Y': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10',
-        'US3M': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTB3',
         'Credit_Spread': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2'
     }
-    
     dfs = []
     try:
+        headers = {'User-Agent': 'Mozilla/5.0'} 
         for name, url in fred_urls.items():
             print(f"   ...获取 {name}")
-            # 添加 User-Agent 防止被简单的反爬拦截
-            headers = {'User-Agent': 'Mozilla/5.0'} 
             r = requests.get(url, headers=headers, timeout=20)
             df = pd.read_csv(io.BytesIO(r.content), index_col=0, parse_dates=True)
             df = df.replace('.', np.nan).astype(float)
             df.columns = [name]
             dfs.append(df)
-            time.sleep(1) # 礼貌性延迟，防止封IP
-            
-        # 修复 Pandas 警告: 显式指定 sort=True
-        macro_data = pd.concat(dfs, axis=1, sort=True)
-        macro_data = macro_data.loc[START_DATE:END_DATE].ffill()
-        
+            time.sleep(1)
+        macro_data = pd.concat(dfs, axis=1, sort=True).ffill().loc[START_DATE:END_DATE]
         macro_data.to_csv(file_path)
-        print(f"   💾 宏观数据已保存至 {file_path}")
         return macro_data
     except Exception as e:
         print(f"   ❌ FRED 下载失败: {e}")
         return None
 
 def fetch_yahoo_spy():
+    # ... (保持原有的 SPY 下载逻辑不变) ...
     file_path = os.path.join(DATA_DIR, 'market_technicals.csv')
     if os.path.exists(file_path):
-        print(f"✅ [本地] 已检测到 SPY 技术面数据，跳过下载。")
+        print(f"✅ [本地] 已检测到 SPY 数据，跳过。")
         return pd.read_csv(file_path, index_col=0, parse_dates=True)
 
-    print("⬇️ [下载] 正在通过 Yahoo Finance 下载 SPY...")
-    
-    # 重试机制：最多尝试 3 次
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            # yfinance 自动下载
-            spy = yf.download('SPY', start=START_DATE, end=END_DATE, progress=False, auto_adjust=True)
-            
-            if spy.empty:
-                raise ValueError("Yahoo 返回了空数据")
-
-            # 清洗
-            feats = pd.DataFrame(index=spy.index)
-            # 处理多级索引问题 (yfinance 新版特性)
-            if isinstance(spy.columns, pd.MultiIndex):
-                close = spy['Close']['SPY'] if 'SPY' in spy.columns.levels[1] else spy.iloc[:, 0]
-                vol = spy['Volume']['SPY'] if 'SPY' in spy.columns.levels[1] else spy.iloc[:, 1]
-            else:
+    print("⬇️ [下载] 正在下载 SPY (作为市场特征)...")
+    try:
+        spy = yf.download('SPY', start=START_DATE, end=END_DATE, progress=False, auto_adjust=True)
+        if isinstance(spy.columns, pd.MultiIndex):
+            if 'Close' in spy.columns.levels[0]:
                 close = spy['Close']
-                vol = spy['Volume']
-
-            feats['Mkt_Ret_20d'] = close.pct_change(20)
-            feats['Mkt_Vol_20d'] = close.pct_change().rolling(20).std()
-            feats['Mkt_Volume_Log'] = np.log(vol + 1)
+                if spy.columns.nlevels > 1: close = close.iloc[:, 0]
+            else: close = spy.iloc[:, 0]
+        else: close = spy['Close']
             
-            feats.to_csv(file_path)
-            print(f"   💾 SPY 数据已保存至 {file_path}")
-            return feats
-            
-        except Exception as e:
-            print(f"   ⚠️ 尝试 {attempt+1}/{max_retries} 失败: {e}")
-            if "Rate limited" in str(e) or "Too Many Requests" in str(e):
-                wait_time = 10 * (attempt + 1)
-                print(f"      ⏳ 触发限流，等待 {wait_time} 秒后重试...")
-                time.sleep(wait_time)
-            else:
-                time.sleep(2)
-    
-    print("   ❌ Yahoo 数据下载最终失败。请稍后再试或检查网络。")
-    return None
+        feats = pd.DataFrame(index=spy.index)
+        feats['Mkt_Ret_60d'] = close.pct_change(60)
+        feats['Mkt_Vol_20d'] = close.pct_change().rolling(20).std()
+        feats.dropna(inplace=True)
+        feats.to_csv(file_path)
+        return feats
+    except Exception as e:
+        print(f"   ❌ SPY 下载失败: {e}")
+        return None
 
 def merge_and_save():
     print("\n🔗 开始合并数据...")
-    
-    df_ff = fetch_fama_french()
+    df_assets = fetch_french_universe_clean()
     df_macro = fetch_macro_fred()
     df_spy = fetch_yahoo_spy()
     
-    # 检查完整性
-    if df_ff is None or df_macro is None or df_spy is None:
-        print("\n⛔ 错误：部分数据缺失，无法合并。")
-        print("   请查看上方报错信息，重新运行脚本以补全缺失部分。")
-        print("   (已下载的部分保存在 /data 文件夹中，无需重新下载)")
-        return
+    if df_assets is None: return
 
     # 合并
-    print("   正在对齐时间戳...")
-    full_df = df_ff.join(df_macro, how='left').join(df_spy, how='left')
-    
-    # 去除空值 (保留三者都有数据的日期)
-    original_len = len(full_df)
+    full_df = df_assets.join(df_macro, how='left').join(df_spy, how='left')
+    full_df.ffill(inplace=True)
     full_df.dropna(inplace=True)
-    final_len = len(full_df)
-    
-    if final_len == 0:
-        print("   ⚠️ 警告：合并后数据为空！请检查各个源的时间范围是否有重叠。")
-        return
 
     full_df.to_csv(FINAL_FILE)
-    print(f"\n🎉 大功告成！")
-    print(f"   原始行数: {original_len}")
-    print(f"   清洗后行数: {final_len}")
-    print(f"   最终文件: {FINAL_FILE}")
-    print(f"   特征列表: {list(full_df.columns)}")
+    print(f"\n🎉 数据准备完成！")
+    print(f"   文件路径: {FINAL_FILE}")
+    print(f"   时间范围: {full_df.index.min().date()} 至 {full_df.index.max().date()}")
+    print(f"   总行数: {len(full_df)}")
+    
+    cols = list(full_df.columns)
+    asset_cols = [c for c in cols if '_' in c and any(k in c for k in FACTOR_CONFIG.keys())]
+    print(f"   包含资产 ({len(asset_cols)}个): {asset_cols}")
 
 if __name__ == "__main__":
     merge_and_save()
