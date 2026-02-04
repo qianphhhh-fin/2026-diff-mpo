@@ -3,45 +3,90 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import os
 
 from config import cfg
 from data_loader import load_and_process_data
 from model import MPO_Network
 
-# 修改 train.py
-
-def sharpe_loss(w_plan, y_future, w_prev, cost_coeff=0.01): # <--- 传入 w_prev 和 cost_coeff
+# ==========================
+# 1. 定义复合损失函数 (Composite Loss)
+# ==========================
+def calc_composite_loss(w_plan, y_future, w_prev, cost_coeff=0.001):
     """
-    w_plan: (Batch, Horizon, Assets)
-    y_future: (Batch, Horizon, Assets)
-    w_prev: (Batch, Assets)
+    计算包含 Sortino、MaxDD 和 Turnover 惩罚的复合 Loss
+    
+    参数:
+    w_plan: (Batch, Horizon, Assets) -> Solver 输出的未来 H 步权重
+    y_future: (Batch, Horizon, Assets) -> 真实未来收益率
+    w_prev: (Batch, Assets) -> 初始持仓
     """
-    # 1. 计算毛收益
-    gross_ret = (w_plan * y_future).sum(dim=2) # (Batch, Horizon)
+    batch_size = w_plan.size(0)
+    horizon = w_plan.size(1)
     
-    # 2. 计算交易成本 (与 Solver 保持一致的 L1 Norm)
-    # 注意：这里需要计算 w_plan[t] - w_plan[t-1] 的完整序列
-    # 构造完整的权重路径: [w_prev, w_0, w_1, ..., w_{H-1}]
-    # 这一步稍微有点繁琐，但必须做
+    # --- A. 构建完整的资金流 ---
+    # 1. 计算换手率 (Turnover)
+    # 拼接 w_prev 和 w_plan，形成完整路径 [w_0, w_1, ..., w_H]
+    w_prev_expanded = w_prev.unsqueeze(1) # (B, 1, N)
+    w_all = torch.cat([w_prev_expanded, w_plan], dim=1) # (B, H+1, N)
     
-    # 将 w_prev 扩展为 (Batch, 1, Assets) 以便拼接
-    w_prev_expanded = w_prev.unsqueeze(1)
+    # 计算每一步的换手: |w_t - w_{t-1}|
+    # dim=2 (Assets) 求和
+    turnover_seq = torch.norm(w_all[:, 1:] - w_all[:, :-1], p=1, dim=2) # (B, H)
     
-    # 拼接: (Batch, H+1, Assets)
-    w_all = torch.cat([w_prev_expanded, w_plan], dim=1)
+    # 2. 计算净收益率 (Net Returns)
+    # Gross Ret = sum(w * y)
+    gross_ret_seq = (w_plan * y_future).sum(dim=2) # (B, H)
+    # Net Ret = Gross - Cost
+    net_ret_seq = gross_ret_seq - cost_coeff * turnover_seq # (B, H)
     
-    # 计算差分: |w_t - w_{t-1}|
-    turnover = torch.norm(w_all[:, 1:] - w_all[:, :-1], p=1, dim=2) # (Batch, Horizon)
+    # --- B. 计算各个 Loss 组件 ---
     
-    # 3. 计算净收益 (Net Return)
-    net_ret = gross_ret - cost_coeff * turnover
+    # Component 1: Sortino Ratio (代替 Sharpe)
+    # 只惩罚下行波动
+    mean_ret = net_ret_seq.mean(dim=1)
+    # 筛选出小于 0 的收益，计算其平方均值作为下行风险
+    downside_returns = torch.clamp(net_ret_seq, max=0.0)
+    downside_std = torch.sqrt(torch.mean(downside_returns**2, dim=1) + 1e-8)
     
-    # 4. 计算 Sharpe (基于净收益)
-    mean_ret = net_ret.mean(dim=1)
-    std_ret = net_ret.std(dim=1) + 1e-6
-    sharpe = mean_ret / std_ret
+    # Sortino = Mean / Downside_Dev
+    sortino = (mean_ret - 0.0) / (downside_std + 1e-6)
+    loss_sortino = -sortino.mean()
     
-    return -sharpe.mean()
+    # Component 2: Max Drawdown Penalty (最大回撤惩罚)
+    # 计算累计净值曲线 Wealth Curve
+    # log(1+r) 近似 r，累加得到 log wealth
+    cum_log_ret = torch.cumsum(torch.log1p(net_ret_seq), dim=1)
+    # 找到截止当前的最高点 (Running Max)
+    # PyTorch 的 cummax 返回 (values, indices)
+    running_max, _ = torch.cummax(cum_log_ret, dim=1)
+    # 计算回撤: Current - Max
+    drawdowns = cum_log_ret - running_max
+    # 找到最大回撤 (最小值)
+    max_dd, _ = torch.min(drawdowns, dim=1) # (B,) 注意这是负数，比如 -0.1
+    
+    # 惩罚项：回撤越深(负得越多)，Loss越大
+    # 使用平方惩罚，让模型极度厌恶深回撤
+    loss_max_dd = torch.mean(max_dd**2) 
+    
+    # Component 3: Turnover Smoothing (换手率平滑)
+    # 惩罚权重的剧烈跳变 (L2 Norm of diff)
+    # 即使 Solver 允许换手，神经网络也不应该输出震荡的信号
+    w_diff_sq = torch.sum((w_all[:, 1:] - w_all[:, :-1])**2, dim=2) # (B, H)
+    loss_smoothing = torch.mean(w_diff_sq)
+    
+    # --- C. 总 Loss ---
+    # 从 Config 读取系数
+    lambda_dd = getattr(cfg, 'LOSS_GAMMA_DD', 5.0)
+    lambda_turnover = getattr(cfg, 'LOSS_GAMMA_TURNOVER', 1.0)
+    
+    total_loss = loss_sortino + lambda_dd * loss_max_dd + lambda_turnover * loss_smoothing
+    
+    return total_loss, {
+        "Sortino": -loss_sortino.item(), # 记录正的 Sortino 方便看
+        "MaxDD_Penalty": loss_max_dd.item(),
+        "Smooth_Penalty": loss_smoothing.item()
+    }
 
 # ==========================
 # 2. 训练主循环
@@ -51,10 +96,11 @@ def train():
     train_loader, test_loader, _ = load_and_process_data()
     
     # 初始化模型
-    model = MPO_Network().to(cfg.DEVICE).double() # CVXPY 需要 Double 精度
+    model = MPO_Network().to(cfg.DEVICE).double() 
     optimizer = optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE)
     
     print(f"🚀 模型已加载至 {cfg.DEVICE}. 开始训练 {cfg.EPOCHS} Epochs...")
+    print(f"   Loss Config: Gamma_DD={getattr(cfg, 'LOSS_GAMMA_DD', 5.0)}, Gamma_Turnover={getattr(cfg, 'LOSS_GAMMA_TURNOVER', 1.0)}")
     
     loss_history = []
     
@@ -62,58 +108,63 @@ def train():
         model.train()
         epoch_loss = 0
         
-        # 进度条
+        # 记录细分指标用于监控
+        metrics_sum = {"Sortino": 0, "MaxDD_Penalty": 0, "Smooth_Penalty": 0}
+        
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg.EPOCHS}")
         
         for batch_idx, (x, y) in enumerate(pbar):
             x, y = x.to(cfg.DEVICE).double(), y.to(cfg.DEVICE).double()
             
-            # 初始持仓：假设每个 Batch 开始时是空仓或者均匀持仓
-            # 在真实的 LSTM 序列训练中，应该把上一个 Batch 的 w 传进来
-            # 这里为了简化，假设每天早上都从 1/N 开始调仓 (或者全现金)
-            # 更好的做法是: w_prev = torch.ones(...) / N
+            # 初始持仓：假设每天早上都从 1/N 开始 (简化假设)
+            # 在更严谨的实现中，可以用 LSTM state 传递真实的 w_prev，但在 Batch 训练中很难做到
             w_prev = torch.ones(x.size(0), cfg.NUM_ASSETS, device=cfg.DEVICE, dtype=torch.double) / cfg.NUM_ASSETS
             
             # --- Forward ---
-            # w_plan 是 Solver 解出来的最优路径
             w_plan, mu_pred, L_pred = model(x, w_prev)
             
-            # --- Loss ---
-            # 使用新的带成本的 Loss，传入 cfg.COST_COEFF
-            loss = sharpe_loss(w_plan, y, w_prev, cost_coeff=cfg.COST_COEFF)
+            # --- Composite Loss ---
+            loss, metrics = calc_composite_loss(w_plan, y, w_prev, cost_coeff=cfg.COST_COEFF)
             
             # --- Backward ---
             optimizer.zero_grad()
             loss.backward()
             
-            # 梯度裁剪 (防止 LSTM 梯度爆炸)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # 梯度裁剪 (关键！防止 MaxDD 导致的梯度爆炸)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
             
             optimizer.step()
             
             epoch_loss += loss.item()
-            pbar.set_postfix({'SharpeLoss': f"{loss.item():.4f}"})
+            
+            # 累加监控指标
+            for k, v in metrics.items():
+                metrics_sum[k] += v
+                
+            pbar.set_postfix({'Loss': f"{loss.item():.2f}", 'Sortino': f"{metrics['Sortino']:.2f}"})
         
         avg_loss = epoch_loss / len(train_loader)
         loss_history.append(avg_loss)
-        print(f"Epoch {epoch+1} Average Loss: {avg_loss:.4f} (Implied Sharpe: {-avg_loss:.4f})")
+        
+        # 打印本 Epoch 的平均指标
+        avg_sortino = metrics_sum["Sortino"] / len(train_loader)
+        avg_dd_pen = metrics_sum["MaxDD_Penalty"] / len(train_loader)
+        print(f"Epoch {epoch+1} | Loss: {avg_loss:.4f} | Avg Sortino: {avg_sortino:.4f} | DD Pen: {avg_dd_pen:.4f}")
         
     # ==========================
-    # 3. 简单的结果可视化
+    # 3. 结果保存
     # ==========================
     plt.figure(figsize=(10, 5))
-    plt.plot(loss_history, label='Negative Sharpe Loss')
-    plt.title('Training Progress')
+    plt.plot(loss_history, label='Composite Loss')
+    plt.title('Training Progress (Composite Loss)')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
     plt.savefig('diff_mpo_training_loss.png')
-    print("📈 训练完成，Loss 曲线已保存至 training_loss.png")
+    print("📈 训练完成，Loss 曲线已保存。")
     
-    # 保存模型
-
-    SAVE_PATH = 'models/diff_mpo_sharpe.pth'  # 科学命名
+    SAVE_PATH = 'models/diff_mpo_sharpe.pth' 
     torch.save(model.state_dict(), SAVE_PATH)
     print(f"🏆 Diff-MPO (Ours) 模型已保存至: {SAVE_PATH}")
 

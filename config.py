@@ -54,6 +54,15 @@ class Config:
     
     SEED = 42
 
+    # ==========================
+    # 4. Loss 惩罚系数 (新增)
+    # ==========================
+    # MaxDD 惩罚力度：越高模型越怕死。建议 5.0 ~ 10.0
+    LOSS_GAMMA_DD = 5.0  
+    
+    # 换手率平滑惩罚：越高模型越不敢乱动。建议 1.0 ~ 5.0
+    LOSS_GAMMA_TURNOVER = 1.0
+
     def __repr__(self):
         return str(vars(self))
 
