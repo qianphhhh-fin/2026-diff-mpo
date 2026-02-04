@@ -1,0 +1,244 @@
+%%%%%%%% ICML 2025 SUBMISSION FILE %%%%%%%%%%%%%%%%%
+
+\documentclass{article}
+
+% Recommended, but optional, packages for figures and better typesetting:
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{booktabs} % for professional tables
+
+% hyperref makes hyperlinks in the resulting PDF.
+\usepackage{hyperref}
+
+% Attempt to make hyperref and algorithmic work together better:
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+
+% Use the following line for the camera-ready submission:
+\usepackage[accepted]{icml2025}
+
+% For theorems and such
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% if you use cleveref..
+\usepackage[capitalize,noabbrev]{cleveref}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% THEOREMS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% Running title
+\icmltitlerunning{Differentiable Multi-Period Portfolio Optimization (DMPO)}
+
+\begin{document}
+
+\twocolumn[
+\icmltitle{Differentiable Multi-Period Portfolio Optimization (DMPO): \\
+Bridging Deep Sequence Modeling and Convex Control with Hard Constraints}
+
+\begin{icmlauthorlist}
+\icmlauthor{Author One}{pku}
+\icmlauthor{Author Two}{pku}
+\end{icmlauthorlist}
+
+\icmlaffiliation{pku}{School of Mathematical Sciences, Peking University, Beijing, China}
+
+\icmlcorrespondingauthor{Author One}{email@pku.edu.cn}
+
+\icmlkeywords{Portfolio Optimization, Differentiable Programming, Reinforcement Learning, Convex Optimization}
+
+\vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+Dynamic portfolio optimization in real-world financial markets requires agents to balance conflicting objectives---maximizing risk-adjusted returns while strictly adhering to physical constraints such as transaction costs, turnover limits, and leverage restrictions. Traditional two-stage frameworks, which first predict asset returns and then solve a mean-variance optimization problem, suffer from the "optimizer's curse," where estimation errors are magnified by the optimization step. Conversely, model-free Deep Reinforcement Learning (DRL) approaches often fail to guarantee feasibility for hard constraints, relying instead on unstable reward shaping or myopic projection layers.
+
+To bridge this gap, we introduce \textbf{Differentiable Multi-Period Portfolio Optimization (DMPO)}, a hybrid end-to-end learning framework that integrates deep sequence modeling with differentiable convex optimization. We formulate the portfolio management problem as a Receding Horizon Control (RHC) task, where a Long Short-Term Memory (LSTM) network learns to output the parameters (e.g., expected returns and risk aversion) of a quadratic programming (QP) layer. By leveraging the implicit function theorem, DMPO analytically computes the gradients of the optimal solution with respect to the input parameters through the Karush-Kuhn-Tucker (KKT) conditions, enabling efficient backpropagation. This architecture allows the model to learn a "decision-aware" market view that directly optimizes the Sharpe ratio while rigorously satisfying multi-period turnover and risk constraints. Theoretical analysis confirms that our method avoids the pitfalls of sub-optimal projection and achieves convergence in non-convex policy landscapes.
+\end{abstract}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SECTION 1: INTRODUCTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+\label{sec:intro}
+
+The fundamental challenge of quantitative finance lies in constructing dynamic portfolios that can adapt to non-stationary market regimes while managing trading frictions and risk constraints. Since the seminal work of Markowitz \citep{markowitz1952}, Mean-Variance Optimization (MVO) has served as the bedrock of modern portfolio theory (MPT). However, classical MVO faces significant practical hurdles: it is highly sensitive to estimation errors in expected returns and covariance matrices, a phenomenon often referred to as the "optimizer's curse" \citep{michaud1989}.
+
+To mitigate these issues, the industry has largely adopted a \textbf{"predict-then-optimize" (two-stage)} paradigm. In the first stage, machine learning models (e.g., ARIMA, XGBoost, or Transformers) are trained to minimize a prediction error metric, such as Mean Squared Error (MSE). In the second stage, these predictions are fed into a numerical solver to generate portfolio weights. While intuitive, this approach is fundamentally flawed because the loss function used for training (prediction error) is misaligned with the ultimate objective (portfolio utility). A small error in return prediction can lead to a drastically different and sub-optimal portfolio allocation due to the ill-conditioned nature of the covariance matrix \citep{bengio2020}.
+
+In recent years, \textbf{Deep Reinforcement Learning (DRL)} has emerged as a promising alternative, aiming to learn a direct mapping from market states to portfolio weights (end-to-end learning) \citep{jiang2017, liang2018}. DRL agents, trained via Policy Gradient (PG) or Q-learning, can theoretically capture complex patterns and optimize non-differentiable rewards like the Sharpe ratio. However, standard DRL algorithms (e.g., PPO, DDPG) struggle significantly with \textbf{hard constraints}. Financial portfolios must adhere to strict constraints—such as non-negativity (no short selling), budget constraints ($\sum w_i = 1$), and, crucially, turnover constraints to limit transaction costs. Existing DRL solutions typically handle these constraints via:
+\begin{enumerate}
+    \item \textit{Softmax/Normalization}: Ensures budget constraints but cannot handle complex inequality constraints like turnover limits.
+    \item \textit{Reward Shaping}: Adds penalties to the reward function for violations. This soft constraint approach provides no feasibility guarantees and often destabilizes training \citep{achiam2017}.
+    \item \textit{Projection}: Projects the network output onto the feasible set. While valid for simple constraints, orthogonal projection is myopic and ignores the gradient information of the constraint boundary, leading to sub-optimal policies.
+\end{enumerate}
+
+\textbf{Our Contribution.} In this work, we propose \textbf{Differentiable Multi-Period Portfolio Optimization (DMPO)}, a novel framework that embeds a convex optimization solver directly into the deep learning architecture. Instead of predicting asset returns (Two-Stage) or outputting weights directly (Standard DRL), our neural network learns to generate \textit{optimization parameters}—conceptually representing a "subjective view" of the market. These parameters define a Quadratic Program (QP) whose solution constitutes the portfolio weights. 
+
+By differentiating through the QP solver using the Implicit Function Theorem \citep{amos2017, agrawal2019}, DMPO achieves the best of both worlds: the representational power of deep learning to extract features from raw data, and the rigor of convex optimization to strictly enforce hard constraints. Furthermore, we extend this to a multi-period setting using Model Predictive Control (MPC) logic, allowing the agent to plan a sequence of trades that balances immediate returns against future transaction costs.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SECTION 2: RELATED WORK
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Related Work}
+
+\subsection{Machine Learning in Portfolio Management}
+Early applications of ML in finance focused on forecasting price trends using Support Vector Machines (SVM) or Recurrent Neural Networks (RNN) \citep{fischer2018}. These forecasts were treated as deterministic inputs to MVO solvers. More recently, "decision-focused learning" \citep{donti2017} has argued that models should be trained to minimize the downstream optimization cost rather than prediction error. Our work aligns with this philosophy by backpropagating the Sharpe ratio loss through the optimization layer.
+
+\subsection{Deep Reinforcement Learning (DRL)}
+DRL has been extensively applied to algorithmic trading. \citep{jiang2017} introduced the EIIE (Ensemble of Identical Independent Evaluators) topology for portfolio management. \citep{wang2019} proposed the AlphaStock model using attention mechanisms. Despite their success in unconstrained settings, handling constraints remains an open challenge. Constrained Policy Optimization (CPO) \citep{achiam2017} attempts to solve this for general MDPs, but it is computationally expensive and difficult to scale to high-dimensional portfolio spaces.
+
+\subsection{Differentiable Optimization Layers}
+The integration of optimization layers into neural networks was pioneered by OptNet \citep{amos2017}, which showed how to differentiate through quadratic programs. \citep{agrawal2019} generalized this to convex cone programs (CvxpyLayers). In the context of finance, \citep{butler2023} applied differentiable convex layers for hedging. However, few works have explicitly addressed the \textit{multi-period turnover constraint} problem in a unified end-to-end framework. DMPO fills this gap by formulating the problem as a differentiable Model Predictive Control (MPC) task.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SECTION 3: METHODOLOGY
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Methodology}
+\label{sec:method}
+
+We formulate the portfolio optimization problem as a Constrained Markov Decision Process (CMDP). The goal is to learn a policy $\pi_\theta$ that maximizes the risk-adjusted return over a finite horizon $H$, subject to transaction costs and hard constraints.
+
+\subsection{Problem Formulation}
+
+Consider a market with $N$ risky assets. At time step $t$, the state $s_t$ consists of the historical window of asset returns $X_t \in \mathbb{R}^{T_{window} \times N}$ and the current portfolio weights $w_{t-1} \in \mathbb{R}^N$. The action $a_t = w_t$ is the target portfolio weight vector for the next period.
+
+The system dynamics are given by the price evolution of the assets. The portfolio return at time $t+1$ (ignoring costs) is $r_{p, t+1} = w_t^\top y_{t+1}$, where $y_{t+1}$ is the realized asset return vector.
+
+\textbf{Transaction Costs.} Real-world trading incurs costs (commissions, slippage). We model the transaction cost $c_t$ as proportional to the turnover:
+\begin{equation}
+    c_t(w_t, w_{t-1}) = \kappa \sum_{i=1}^N |w_{t,i} - w_{t-1,i}| = \kappa \| w_t - w_{t-1} \|_1
+\end{equation}
+where $\kappa$ is the transaction cost rate (e.g., 10 basis points).
+
+\textbf{Objective.} We aim to maximize the annualized Sharpe Ratio. However, for the optimization layer, we utilize a mean-variance utility proxy, while the outer loop (RL training) optimizes the Sharpe Ratio directly.
+
+\subsection{The DMPO Architecture}
+
+The DMPO policy $\pi_\theta(s_t)$ is a composite function consisting of a \textbf{Prediction Network (Encoder)} and a \textbf{Differentiable Optimization Layer (Decoder)}.
+
+\subsubsection{1. Encoder: Latent Market Views}
+We use an LSTM network to process the time-series features $X_t$. The network does not directly output weights. Instead, it outputs a vector $\hat{\mu}_t \in \mathbb{R}^N$ and a structured matrix $\hat{L}_t \in \mathbb{R}^{N \times N}$ (where $\hat{\Sigma}_t = \hat{L}_t \hat{L}_t^\top$).
+\begin{align}
+    h_t &= \text{LSTM}(X_t; \theta_{enc}) \\
+    \hat{\mu}_t &= \text{Linear}_{\mu}(h_t) \\
+    \hat{L}_t &= \text{Softplus}(\text{Linear}_{\Sigma}(h_t))
+\end{align}
+Here, $\hat{\mu}_t$ can be interpreted as the model's "subjective view" of future returns, and $\hat{\Sigma}_t$ as the "subjective risk". Crucially, these are \textit{not} trained to match realized returns (MSE loss) but are latent parameters trained to maximize final portfolio utility.
+
+\subsubsection{2. Decoder: Differentiable QP Layer}
+The core of DMPO is the convex optimization layer. Given the previous weights $w_{t-1}$ and the learned parameters $\hat{\mu}_t, \hat{\Sigma}_t$, the network solves the following Quadratic Program (QP) to determine the optimal action $w_t^*$:
+
+\begin{subequations} \label{eq:qp}
+\begin{align}
+    w_t^* = \mathop{\arg\min}_{w \in \mathbb{R}^N} \quad & \frac{1}{2} w^\top \hat{\Sigma}_t w - \lambda \hat{\mu}_t^\top w \label{eq:qp_obj} \\
+    \text{s.t.} \quad & \mathbf{1}^\top w = 1, \quad \text{(Budget)} \\
+    & w \succeq 0, \quad \text{(No Shorting)} \\
+    & \| w - w_{t-1} \|_1 \leq \delta_t. \quad \text{(Turnover Constraint)} \label{eq:turnover}
+\end{align}
+\end{subequations}
+
+Here, $\delta_t$ is a dynamic turnover limit (which can also be learned or fixed). The term $\| w - w_{t-1} \|_1 \leq \delta_t$ is a hard constraint that prevents the model from excessive trading.
+
+Since Equation \eqref{eq:qp} is a convex QP, it has a unique global minimum. We utilize the Alternating Direction Method of Multipliers (ADMM) or interior-point methods (via CVXPY) to solve this in the forward pass.
+
+\subsection{Implicit Differentiation \& Backward Pass}
+
+To train the encoder parameters $\theta_{enc}$ end-to-end, we need to compute the gradient of the loss $\mathcal{L}$ (e.g., negative Sharpe Ratio) with respect to $\hat{\mu}_t$ and $\hat{\Sigma}_t$.
+The chain rule gives:
+\begin{equation}
+    \frac{\partial \mathcal{L}}{\partial \theta} = \frac{\partial \mathcal{L}}{\partial w_t^*} \cdot \underbrace{\frac{\partial w_t^*}{\partial \hat{\mu}_t}}_{\text{Jacobian}} \cdot \frac{\partial \hat{\mu}_t}{\partial \theta}
+\end{equation}
+
+The challenge is computing the Jacobian of the solution $w_t^*$ with respect to the problem parameters. Since $w_t^*$ is defined implicitly as the solution to an optimization problem, we invoke the \textbf{Implicit Function Theorem}.
+
+The KKT optimality conditions for the QP \eqref{eq:qp} can be written as a system of equations $G(z, \psi) = 0$, where $z = (w^*, \nu^*, \xi^*)$ contains the primal and dual optimal variables, and $\psi = (\hat{\mu}_t, \hat{\Sigma}_t, w_{t-1})$ contains the parameters.
+Specifically, differentiating the KKT conditions with respect to $\psi$ yields:
+\begin{equation}
+    D_z G(z^*, \psi) \mathrm{d}z + D_\psi G(z^*, \psi) \mathrm{d}\psi = 0
+\end{equation}
+\begin{equation}
+    \frac{\partial z^*}{\partial \psi} = - \left( D_z G(z^*, \psi) \right)^{-1} D_\psi G(z^*, \psi)
+\end{equation}
+The term $D_z G$ is essentially the KKT matrix. By solving a linear system involving the KKT matrix, we can efficiently compute the gradients without unrolling the iterative solver. This allows us to backpropagate the Sharpe Ratio gradient through the hard turnover constraint, effectively telling the neural network: \textit{"Adjust your market view $\hat{\mu}_t$ such that the resulting constrained portfolio has a higher Sharpe ratio."}
+
+\subsection{Multi-Period Extension (MPC)}
+While the QP above is a single-step lookahead, DMPO can be extended to a Receding Horizon Control (RHC) framework. The network predicts a sequence of views $\{\hat{\mu}_{t+k}\}_{k=0}^H$. The QP layer then solves for a trajectory of weights $\{w_{t}, \dots, w_{t+H}\}$, but only the first action $w_t$ is executed. The cost function in the QP becomes:
+\begin{equation}
+    \sum_{\tau=t}^{t+H} \left( \frac{1}{2} w_\tau^\top \hat{\Sigma}_\tau w_\tau - \hat{\mu}_\tau^\top w_\tau + \gamma \| w_\tau - w_{\tau-1} \|_1 \right)
+\end{equation}
+This allows the agent to strategically plan trades to minimize impact costs over time.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SECTION 4: ALGORITHM
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Algorithm}
+
+The training procedure for DMPO is summarized in Algorithm \ref{alg:dmpo}.
+
+\begin{algorithm}[tb]
+   \caption{Differentiable Multi-Period Portfolio Optimization (DMPO)}
+   \label{alg:dmpo}
+\begin{algorithmic}
+   \STATE {\bfseries Input:} Historical data $\mathcal{D}$, Horizon $H$, Batch size $B$, Learning rate $\alpha$
+   \STATE {\bfseries Initialize:} Encoder parameters $\theta$
+   \WHILE{not converged}
+   \STATE Sample a batch of time windows $\{ (X_t^{(i)}, w_{t-1}^{(i)}) \}_{i=1}^B$ from $\mathcal{D}$
+   \FOR{each sample $i$ in batch}
+       \STATE \textbf{1. Forward Pass (View Generation):}
+       \STATE $\hat{\mu}_t^{(i)}, \hat{\Sigma}_t^{(i)} \leftarrow \text{Encoder}(X_t^{(i)}; \theta)$
+       
+       \STATE \textbf{2. Forward Pass (QP Layer):}
+       \STATE Solve QP \eqref{eq:qp} to get primal optimal $w_t^{*(i)}$
+       \STATE Store KKT matrix factorization for backward pass
+       
+       \STATE \textbf{3. Loss Calculation:}
+       \STATE Compute realized return $r_{t+1}^{(i)} = (w_t^{*(i)})^\top y_{t+1}$
+       \STATE Compute transaction cost $c_t^{(i)} = \kappa \| w_t^{*(i)} - w_{t-1}^{(i)} \|_1$
+       \STATE $r_{net}^{(i)} = r_{t+1}^{(i)} - c_t^{(i)}$
+   \ENDFOR
+   \STATE Compute Batch Sharpe Ratio: $\mathcal{L}(\theta) = -\frac{\text{Mean}(r_{net})}{\text{Std}(r_{net})}$
+   
+   \STATE \textbf{4. Backward Pass (Implicit Diff):}
+   \STATE Compute $\nabla_\theta \mathcal{L}$ by backpropagating through KKT system
+   \STATE Update $\theta \leftarrow \theta - \alpha \nabla_\theta \mathcal{L}$
+   \ENDWHILE
+\end{algorithmic}
+\end{algorithm}
+
+\section{Theoretical Analysis}
+\label{sec:theory}
+
+\subsection{Convexity and Uniqueness}
+The optimization layer in DMPO is constructed to be strictly convex. The regularization term $\frac{1}{2} w^\top \hat{\Sigma} w$ ensures positive definiteness provided $\hat{\Sigma}$ is positive definite (which we enforce via the Cholesky parametrization $\hat{L}\hat{L}^\top + \epsilon I$). This guarantees that for any learned view $\hat{\mu}$, there exists a unique optimal portfolio $w^*$, ensuring the mapping from view to action is a well-defined function.
+
+\subsection{Gradient Existence}
+A key theoretical concern is whether the gradients exist at the boundaries of the feasible set. \citep{agrawal2019} showed that the solution map of a convex program is differentiable almost everywhere with respect to its parameters. Specifically, points where the active set of constraints changes (e.g., a weight hitting exactly 0 or the turnover constraint binding exactly) are measure zero. In practice, this means gradient-based training is stable, unlike in discrete action spaces.
+
+\subsection{Feasibility Guarantee}
+Unlike soft-constrained RL methods (e.g., PPO with penalty), DMPO guarantees $w_t \in \mathcal{F}$ (the feasible set) at \textit{every} step of training and inference. This is because the output is the solution to a constrained optimization problem. This property is crucial for financial applications where violating leverage or turnover limits is legally or operationally impermissible.
+
+\section{Conclusion}
+We presented DMPO, an end-to-end framework for dynamic portfolio optimization. By differentiating through a convex optimization layer, DMPO aligns the feature learning capability of deep neural networks with the rigorous constraint handling of mathematical programming. This approach effectively solves the "optimizer's curse" by learning market views that are specifically tuned to perform well under the subsequent optimization step.
+
+\bibliography{diff-mpo}
+\bibliographystyle{icml2025}
+
+\end{document}

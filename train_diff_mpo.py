@@ -8,33 +8,39 @@ from config import cfg
 from data_loader import load_and_process_data
 from model import MPO_Network
 
-# ==========================
-# 1. 定义 Sharpe Loss
-# ==========================
-def sharpe_loss(w_plan, y_future, transaction_cost_coeff=0.0005):
+# 修改 train.py
+
+def sharpe_loss(w_plan, y_future, w_prev, cost_coeff=0.01): # <--- 传入 w_prev 和 cost_coeff
     """
-    w_plan: (Batch, Horizon, Assets) 优化器产出的权重
-    y_future: (Batch, Horizon, Assets) 未来的真实收益率
+    w_plan: (Batch, Horizon, Assets)
+    y_future: (Batch, Horizon, Assets)
+    w_prev: (Batch, Assets)
     """
-    # 1. 计算组合收益 R_p = w * r
-    # (Batch, H, N) * (Batch, H, N) -> sum -> (Batch, H)
-    portfolio_ret = (w_plan * y_future).sum(dim=2)
+    # 1. 计算毛收益
+    gross_ret = (w_plan * y_future).sum(dim=2) # (Batch, Horizon)
     
-    # 2. 计算交易成本 (简化版: 既然是 Loss，我们希望惩罚高换手)
-    # 这一步在 Solver 里已经惩罚过了，但在 Loss 里再加一次双保险
-    # 这里为了简便，主要看纯收益的夏普，把成本隐含在 w 的选择中
-    # 如果 w 乱变，Solver 里的 cost 项会很大，导致 w 被约束，
-    # 间接导致 portfolio_ret 变差 (因为没钱赚了)
+    # 2. 计算交易成本 (与 Solver 保持一致的 L1 Norm)
+    # 注意：这里需要计算 w_plan[t] - w_plan[t-1] 的完整序列
+    # 构造完整的权重路径: [w_prev, w_0, w_1, ..., w_{H-1}]
+    # 这一步稍微有点繁琐，但必须做
     
-    # 3. 计算 Sharpe
-    # 按 Batch 计算平均收益和标准差
-    # 假设无风险利率为 0 (或者已经是超额收益)
-    mean_ret = portfolio_ret.mean(dim=1) # (Batch,)
-    std_ret = portfolio_ret.std(dim=1) + 1e-6 # (Batch,)
+    # 将 w_prev 扩展为 (Batch, 1, Assets) 以便拼接
+    w_prev_expanded = w_prev.unsqueeze(1)
     
+    # 拼接: (Batch, H+1, Assets)
+    w_all = torch.cat([w_prev_expanded, w_plan], dim=1)
+    
+    # 计算差分: |w_t - w_{t-1}|
+    turnover = torch.norm(w_all[:, 1:] - w_all[:, :-1], p=1, dim=2) # (Batch, Horizon)
+    
+    # 3. 计算净收益 (Net Return)
+    net_ret = gross_ret - cost_coeff * turnover
+    
+    # 4. 计算 Sharpe (基于净收益)
+    mean_ret = net_ret.mean(dim=1)
+    std_ret = net_ret.std(dim=1) + 1e-6
     sharpe = mean_ret / std_ret
     
-    # 目标是最大化 Sharpe => 最小化 -Sharpe
     return -sharpe.mean()
 
 # ==========================
@@ -73,8 +79,8 @@ def train():
             w_plan, mu_pred, L_pred = model(x, w_prev)
             
             # --- Loss ---
-            # 我们用真实的未来收益 y 来评价 w_plan 好不好
-            loss = sharpe_loss(w_plan, y)
+            # 使用新的带成本的 Loss，传入 cfg.COST_COEFF
+            loss = sharpe_loss(w_plan, y, w_prev, cost_coeff=cfg.COST_COEFF)
             
             # --- Backward ---
             optimizer.zero_grad()

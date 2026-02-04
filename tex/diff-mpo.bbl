@@ -1,0 +1,68 @@
+\begin{thebibliography}{12}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Achiam et~al.(2017)Achiam, Held, Tamar, and Abbeel]{achiam2017}
+Achiam, J., Held, D., Tamar, A., and Abbeel, P.
+\newblock Constrained policy optimization.
+\newblock In \emph{International conference on machine learning}, pp.\  22--31. PMLR, 2017.
+
+\bibitem[Agrawal et~al.(2019)Agrawal, Amos, Barratt, Boyd, Diamond, and Kolter]{agrawal2019}
+Agrawal, A., Amos, B., Barratt, S., Boyd, S., Diamond, S., and Kolter, J.~Z.
+\newblock Differentiable convex optimization layers.
+\newblock In \emph{Advances in neural information processing systems}, volume~32, 2019.
+
+\bibitem[Amos \& Kolter(2017)Amos and Kolter]{amos2017}
+Amos, B. and Kolter, J.~Z.
+\newblock Optnet: Differentiable optimization as a layer in neural networks.
+\newblock In \emph{International Conference on Machine Learning}, pp.\  136--145. PMLR, 2017.
+
+\bibitem[Bengio et~al.(2020)Bengio, Lodi, and Prouvost]{bengio2020}
+Bengio, Y., Lodi, A., and Prouvost, A.
+\newblock Decision-focused learning: The case of portfolio optimization.
+\newblock \emph{arXiv preprint arXiv:2011.08697}, 2020.
+
+\bibitem[Butler \& Kwon(2023)Butler and Kwon]{butler2023}
+Butler, A. and Kwon, R.
+\newblock Introduction to convex optimization for quantitative finance.
+\newblock \emph{Journal of Financial Econometrics}, 2023.
+
+\bibitem[Donti et~al.(2017)Donti, Amos, and Kolter]{donti2017}
+Donti, P., Amos, B., and Kolter, J.~Z.
+\newblock Task-based end-to-end model learning in stochastic optimization.
+\newblock In \emph{Advances in Neural Information Processing Systems}, volume~30, 2017.
+
+\bibitem[Fischer \& Krauss(2018)Fischer and Krauss]{fischer2018}
+Fischer, T. and Krauss, C.
+\newblock Deep learning with long short-term memory networks for financial market predictions.
+\newblock \emph{European Journal of Operational Research}, 270\penalty0 (2):\penalty0 654--669, 2018.
+
+\bibitem[Jiang et~al.(2017)Jiang, Xu, and Liang]{jiang2017}
+Jiang, Z., Xu, D., and Liang, J.
+\newblock A deep reinforcement learning framework for the financial portfolio management problem.
+\newblock \emph{arXiv preprint arXiv:1706.10059}, 2017.
+
+\bibitem[Liang et~al.(2018)Liang, Chen, Zhu, Jiang, and Li]{liang2018}
+Liang, Z., Chen, H., Zhu, J., Jiang, K., and Li, Y.
+\newblock Adversarial deep reinforcement learning in portfolio management.
+\newblock \emph{arXiv preprint arXiv:1808.09940}, 2018.
+
+\bibitem[Markowitz(1952)]{markowitz1952}
+Markowitz, H.
+\newblock Portfolio selection.
+\newblock \emph{The journal of finance}, 7\penalty0 (1):\penalty0 77--91, 1952.
+
+\bibitem[Michaud(1989)]{michaud1989}
+Michaud, R.~O.
+\newblock The markowitz optimization enigma: Is 'optimized' optimal?
+\newblock \emph{Financial analysts journal}, 45\penalty0 (1):\penalty0 31--42, 1989.
+
+\bibitem[Wang et~al.(2019)Wang, Zhang, Tang, Wu, and Xiong]{wang2019}
+Wang, J., Zhang, Y., Tang, K., Wu, J., and Xiong, Z.
+\newblock Alphastock: A buying-winners-and-selling-losers investment strategy using attentive lstm.
+\newblock \emph{Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery \& Data Mining}, 2019.
+
+\end{thebibliography}
