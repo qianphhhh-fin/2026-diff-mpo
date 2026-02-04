@@ -1,0 +1,10 @@
+Strategy,Ann Return,Sharpe,Max DD,Turnover
+Ours (Diff-MPO),6.29%,0.35,-25.34%,16.92%
+1/N,2.94%,0.12,-15.37%,0.07%
+Neural Risk Parity,2.90%,0.12,-14.84%,0.07%
+Two-Stage (MSE),2.47%,0.06,-14.93%,0.09%
+Vanilla Risk Parity,1.82%,-0.03,-10.11%,1.12%
+Global Min Var,0.69%,-0.26,-10.54%,3.32%
+Mean-CVaR,0.37%,-0.30,-14.39%,3.73%
+Factor Momentum,-1.48%,-0.35,-27.34%,28.46%
+Mean-Variance,-5.93%,-0.58,-50.61%,21.72%
