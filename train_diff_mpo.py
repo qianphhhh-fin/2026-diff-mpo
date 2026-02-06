@@ -124,7 +124,25 @@ def train():
             w_plan, mu_pred, L_pred = model(x, w_prev)
             
             # --- Composite Loss ---
-            loss, metrics = calc_composite_loss(w_plan, y, w_prev, cost_coeff=cfg.COST_COEFF)
+            loss_mpo, metrics = calc_composite_loss(w_plan, y, w_prev, cost_coeff=cfg.COST_COEFF)
+            
+            # --- Auxiliary Losses ---
+            # 1. MSE Loss for mu prediction
+            loss_mse = torch.nn.functional.mse_loss(mu_pred, y)
+            
+            # 2. Realized Risk Penalty (CVaR Violation)
+            # port_ret: (B, H)
+            port_ret = (w_plan * y).sum(dim=2)
+            # 惩罚项: ReLU(-Return - Limit) -> 亏损超过 Limit 的幅度
+            violation = torch.relu(-port_ret - cfg.CVAR_LIMIT)
+            loss_realized_risk = torch.mean(violation**2)
+            
+            # Total Loss
+            # 降低 loss_realized_risk 的权重从 1000.0 到 20.0，避免 CVaR 惩罚淹没 Sharpe/Sortino 优化目标
+            # loss_mpo (Sortino) 约为 -0.05 ~ -0.1 量级
+            # loss_mse 约为 1e-4 量级 -> 1000.0 * 1e-4 = 0.1 (合理)
+            # loss_realized_risk 约为 1e-4 量级 -> 1000.0 * 1e-4 = 0.1 (偏大，如果违背多的话) -> 降为 20.0
+            loss = loss_mpo + 1000.0 * loss_mse + 20.0 * loss_realized_risk
             
             # --- Backward ---
             optimizer.zero_grad()

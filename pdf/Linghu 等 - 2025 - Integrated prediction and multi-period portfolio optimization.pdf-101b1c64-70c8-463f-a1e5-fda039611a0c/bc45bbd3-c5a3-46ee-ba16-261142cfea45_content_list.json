@@ -1,0 +1,3450 @@
+[
+    {
+        "type": "text",
+        "text": "Integrated Prediction and Multi-period Portfolio Optimization ",
+        "text_level": 1,
+        "bbox": [
+            134,
+            126,
+            872,
+            151
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Yuxuan Linghu† Zhiyuan Liu‡ Qi Deng§ ",
+        "bbox": [
+            294,
+            164,
+            710,
+            184
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "December 16, 2025 ",
+        "bbox": [
+            415,
+            193,
+            583,
+            210
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Abstract ",
+        "text_level": 1,
+        "bbox": [
+            460,
+            250,
+            536,
+            263
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Multi-period portfolio optimization is essential for realistic portfolio management, as it accounts for transaction costs, path-dependent risks, and the intertemporal structure of trading decisions that single-period models cannot capture. However, multi-period portfolio optimization requires multistage return forecasts. Classical methods usually follow a two-stage framework: machine learning algorithms are employed to produce forecasts that closely fit the realized returns, and the predicted values are then used in a downstream portfolio optimization problem to determine the asset weights. This separation leads to a fundamental misalignment between predictions and decision outcomes, while also ignoring the impact of transaction costs. To bridge this gap, recent studies have proposed the idea of end-to-end learning, integrating the two stages into a single pipeline. This paper introduces IPMO (Integrated Prediction and Multi-period Portfolio Optimization), a model for multi-period mean-variance portfolio optimization with turnover penalties. The predictor generates multi-period return forecasts that parameterize a differentiable convex optimization layer, which in turn drives learning via portfolio performance. For scalability, we introduce a mirror-descent fixed-point (MDFP) differentiation scheme that avoids factorizing the Karush–Kuhn–Tucker (KKT) systems, which thus yields stable implicit gradients and nearly scale-insensitive runtime as the decision horizon grows. In experiments with real market data and two representative time-series prediction models, the IPMO method consistently outperforms the two-stage benchmarks in risk-adjusted performance net of transaction costs and achieves more coherent allocation paths. Our results show that integrating machine learning prediction with optimization in the multi-period setting improves financial outcomes and remains computationally tractable. ",
+        "bbox": [
+            152,
+            269,
+            843,
+            531
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Keywords: Multi-period portfolio optimization, End-to-end learning, Transaction costs, Implicit differentiation ",
+        "bbox": [
+            112,
+            537,
+            882,
+            565
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "1 Introduction ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            587,
+            309,
+            604
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "The mean-variance optimization of Markowitz [33] establishes the foundation of modern portfolio theory. This framework has been widely applied to portfolio problems, where the optimal portfolio often maximizes a one-step-ahead objective. Despite its simplicity, this greedy strategy may lead to suboptimal solutions in the long run. A large out-of-sample study by DeMiguel et al. [15] demonstrates that iteratively applying single-period mean-variance optimization underperforms a simple equal-weights rule, indicating the instability of this paradigm in real-world settings. ",
+        "bbox": [
+            110,
+            615,
+            880,
+            701
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "One extension of the Markowitz model is multi-period mean-variance optimization, which addresses multi-stage allocation decisions over a finite horizon. Unlike single-period models, multi-period formulations incorporate transaction costs and path-dependent risk, making the problem both more realistic and significantly more challenging. Classical work approaches this setting through stochastic programming. Dantzig and Infanger [14] formulate the multi-period portfolio problem as a multi-stage stochastic linear program and develop decomposition-based algorithms to handle the resulting scenario tree. However, these methods can be computationally intractable without distributional assumptions, as the branches grow exponentially with the horizon. Boyd et al. [10] propose the model predictive control (MPC) approach for multi-period portfolio optimization, where the unknown parameters are replaced with their ",
+        "bbox": [
+            110,
+            702,
+            884,
+            831
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "aside_text",
+        "text": "arXiv:2512.11273v2 [cs.CE] 15 Dec 2025 ",
+        "bbox": [
+            21,
+            288,
+            60,
+            706
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_footnote",
+        "text": "∗YL and ZL contributed equally. ",
+        "bbox": [
+            132,
+            837,
+            344,
+            850
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_footnote",
+        "text": "†Email: lhyx366893061@sjtu.edu.cn, Shanghai Jiao Tong University. ",
+        "bbox": [
+            132,
+            850,
+            571,
+            862
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_footnote",
+        "text": "‡Email: zhiyuanliu@uchicago.edu, The University of Chicago. ",
+        "bbox": [
+            132,
+            860,
+            532,
+            873
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_footnote",
+        "text": "§Email: qdeng24@sjtu.edu.cn, Shanghai Jiao Tong University. ",
+        "bbox": [
+            132,
+            873,
+            529,
+            885
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_number",
+        "text": "1 ",
+        "bbox": [
+            492,
+            923,
+            502,
+            934
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "forecasted values. At each time step, they obtain a multi-period allocation path with all available information to avoid unfavorable positions in the future, while only executing the first step. The MPC approach divides the problem into two stages: parameter prediction and deterministic portfolio optimization, and therefore provides a tractable approximation to the original problem, where the two stages can be effectively handled separately. ",
+        "bbox": [
+            110,
+            84,
+            882,
+            155
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "In many fields, including portfolio optimization, it is well recognized that parameter estimation is crucial for downstream decision-making. Recent work shows that regularized estimators and shrinkage techniques can significantly reduce estimation risk and stabilize return and covariance forecasts, leading to more robust portfolios in high-dimensional settings [24, 25]. Advancements in end-to-end, decisionfocused learning provide novel frameworks to integrate these two stages in modeling. Elmachtoub and Grigas [16] develop the Smart “Predict, then Optimize” framework, which replaces standard statistical losses with a decision-aware objective that directly penalizes the suboptimality of the downstream linear program induced by prediction errors. They show that training with the decision-centric loss can yield models that exhibit lower predictive accuracy yet deliver better decision performance than those trained under conventional decoupled approaches. However, solving the integrated optimization problems is computationally non-trivial in general. In multi-period settings, the number of decision variables in the optimization layer grows linearly with the planning horizon, posing challenges to the scalability of the integrated methods. Widely used differentiable optimization methods such as OptNet [2] and CvxpyLayer [1] rely on differentiating through large KKT systems. As the planning horizon increases, the associated KKT systems grow rapidly in dimension, substantially inflating training time. ",
+        "bbox": [
+            115,
+            155,
+            884,
+            368
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "In this paper, we propose IPMO, an integrated deep learning framework for multi-period portfolio optimization, and provide a tractable optimization algorithm for long-horizon decision-making. Building on the MPC formulation [10] and the decision-focused approach [16], we embed a multi-period meanvariance optimization layer directly into the learning model, connecting the predictions and allocation decisions. Instead of treating return prediction as an independent statistical task, the proposed framework incorporates the intertemporal structure of trading decisions and captures the effects of transaction costs. In empirical tests on real market data, the IPMO framework consistently delivers higher risk-adjusted performance, lower sensitivity to transaction costs, and more stable allocation paths both in sample and out of sample. These gains are robust across planning horizons and forecasting architectures. In addition, to overcome computational limitations, we develop a mirror descent fixed-point (MDFP) differentiation algorithm that applies a single mirror descent step at the optimal solution to obtain a fixed-point equation. This algorithm circumvents the construction and inversion of large KKT matrices, substantially reducing training time in practice. Our contributions are as follows: ",
+        "bbox": [
+            110,
+            369,
+            884,
+            552
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "list",
+        "sub_type": "text",
+        "list_items": [
+            "1. We present IPMO, the first integrated learning framework for multi-period mean-variance portfolio optimization. Empirical tests on real market data demonstrate the superior risk-adjusted performance and higher consistency in decision-making of IPMO over traditional two-stage approaches, regardless of the prediction model complexity. ",
+            "2. We derive the MDFP algorithm, which obtains tractable gradients for a multi-stage optimization layer, enabling efficient differentiation without explicitly forming or inverting high-dimensional KKT systems. The resulting fixed-point formulation provides a general recipe for differentiating complex iterative solvers while maintaining scalability and low computational overhead across long planning horizons. "
+        ],
+        "bbox": [
+            134,
+            562,
+            882,
+            699
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "The rest of the paper is organized as follows. Section 2 reviews the previous work on portfolio optimization and decision-focused learning. Section 3 explains the theoretical background of multi-period mean-variance optimization and introduces the conventional two-stage pipeline. Section 4 develops the IPMO framework, in which the predictor and the optimizer are jointly trained through the MDFP formulation and its efficient implicit differentiation scheme. Section 5 presents empirical results on real ETF data, demonstrating that integrated learning consistently yields higher risk-adjusted performance and better scalability than the two-stage baseline. Section 6 concludes. ",
+        "bbox": [
+            112,
+            709,
+            882,
+            808
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "2 Related work ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            829,
+            319,
+            847
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Portfolio optimization Portfolio optimization is one of the central problems in finance, formalized by Markowitz [33] as the mean-variance optimization problem. The mean-variance model and its variants, ",
+        "bbox": [
+            112,
+            859,
+            882,
+            889
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "page_number",
+        "text": "2 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            934
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "such as the Black-Litterman model [7] and the mean-semivariance model [17], are popular among practitioners and academics. These frameworks maximize the risk-return trade-off under different metrics and constraints by selecting asset weights. In most empirical studies, the optimal portfolio is re-estimated periodically as the parameters change over time [20, 11, 26]. Nonetheless, it is shown that the greedy single-period optimization may lead to suboptimal solutions over the long run [15]. Gˆarleanu and Pedersen [18] show that in the presence of transaction costs, the optimal strategy is to gradually rebalance towards a weighted average of the current target portfolio and the expected future target portfolios, highlighting the necessity of multi-stage planning. ",
+        "bbox": [
+            110,
+            84,
+            882,
+            198
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "There are various methods to approach multi-period portfolio optimization. Building on the classical stochastic programming formulation [14], subsequent work optimizes expected terminal wealth or the utility of terminal performance over the investment horizon [41]. However, such objectives lead to timeinconsistent decisions, as the allocation may not remain optimal as time progresses [29]. Instead of applying a static pre-commitment strategy, later studies further examine multi-period mean-variance optimization in a dynamic setting [4]. Yu and Chang [40] fit a neural network to produce multi-period returns from simulation of economic factors. The return predictions are passed into a Mean-CVaR optimizer to obtain portfolio weights. Building on the model predictive control (MPC) formulation [10], several studies adopt related “predict-then-optimize” schemes for multi-period allocation [36, 30], where forecasts of returns and risks are passed into a deterministic optimization layer at each rebalancing date. On the other hand, some studies rely on sophisticated methods such as deep reinforcement learning without an explicit optimization process to generate portfolio weights directly [13, 21]. Motivated by the limitations of both pipelines, a complementary direction makes the optimizer part of the learning model, so that forecasts are shaped directly by the portfolio objective. ",
+        "bbox": [
+            115,
+            198,
+            884,
+            398
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Decision-focused learning The decision-focused line in portfolio optimization builds on differentiable optimization. Amos and Kolter [2] introduce OptNet to embed quadratic programs as neural layers via implicit differentiation of the KKT system, and Agrawal et al. [1] generalize this capability to disciplined convex programs through CvxpyLayer. Blondel et al. [8] present a general method of applying automatic implicit differentiation for a broad range of optimization problems. More recent studies further improve the computational tractability of large-scale end-to-end learning. BPQP [37] simplifies the backward pass as a QP and adopts efficient solvers for the forward and the backward passes separately. This decoupling provides greater flexibility in selecting solvers and accelerates the optimization process. dQP [32] computes the active constraint set to prune the KKT system, reducing computation costs for large-scale sparse problems. Building on these tools, finance studies move the portfolio optimization objective inside the learning loop in diverse settings. Lee et al. [27] study how decision-focused learning reshapes return predictors to improve decision quality, and complementary end-to-end GMV results are reported by Bongiorno et al. [9]. Uysal et al. [38] optimize risk-budgeting objectives in an end-to-end manner, demonstrating significant out-of-sample performance gains from including the optimization layer over the model-free approach. Tail- and risk-sensitive variants have primarily been explored through distributionally robust, single-period end-to-end formulations [12]. For tradability, single-period cardinalityconstrained portfolios are trained in an integrated, predict-and-optimize fashion [3]. Collectively, these works establish single-period end-to-end portfolios as a rigorous testbed, and provide the building blocks for multi-period end-to-end formulations. ",
+        "bbox": [
+            115,
+            412,
+            882,
+            682
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "It is recognized that scaling portfolio optimization models to realistic asset universes and long decision horizons raises computational challenges due to the increasing dimensionality of the resulting optimization problems. In the cross-section, Bertsimas and Cory-Wright [5] propose a sparse portfolio selection method that delivers substantial speedups at real-world scales. In end-to-end optimization, it is well recognized that embedding a differentiable optimization layer into the portfolio model incurs additional computational cost [3], posing challenges to the scalability of the end-to-end optimization. Multi-period formulations further amplify the computational burden, with costs growing at least linearly in the horizon. Wahlberg et al. [39] apply ADMM for multi-period portfolio optimization problems with transaction costs and yield orders-of-magnitude speedups over generic solvers. ",
+        "bbox": [
+            110,
+            683,
+            882,
+            810
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "The above literature highlights both the benefits of multi-period portfolio optimization and the potential of decision-focused learning for improving portfolio decisions. However, to the best of our knowledge, existing work has not systematically combined these two strands to develop a genuinely integrated, multi-period portfolio optimization framework that jointly learns forecasts and allocation policies. Furthermore, current differentiable optimization approaches predominantly rely on implicit differentiation through large KKT systems. Consequently, the computational costs of the backward pass can become ",
+        "bbox": [
+            112,
+            810,
+            880,
+            897
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "page_number",
+        "text": "3 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "the main bottleneck of the integrated methods as the system size grows. These limitations highlight the need for a computationally tractable mechanism that enables multi-period, decision-driven learning without incurring the full cost of differentiating a large-scale constrained optimization problem. ",
+        "bbox": [
+            112,
+            84,
+            880,
+            127
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "3 Background ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            147,
+            302,
+            166
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Consider a long-only portfolio of $N$ traded assets at discrete decision dates ${ t + 1 } , \\ldots , { t + H }$ . At the start date $t$ , the portfolio holds a known weight vector $z _ { t } \\in \\mathbb { R } ^ { N }$ . We plan a path of future portfolio allocations $\\mathbf { z } _ { t } = ( z _ { t + 1 } , \\dots , z _ { t + H } )$ over an $H$ -day horizon, where $z _ { s }$ denotes the target portfolio weights on day $s$ . $\\mathcal { F } _ { t }$ denotes the available information up to day $t$ . We start from a general optimization problem that maximizes intertemporal utility, subject to feasibility ",
+        "bbox": [
+            112,
+            177,
+            880,
+            247
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\max _ {\\mathbf {z} _ {t}} \\mathbb {E} \\left[ \\mathcal {U} (\\mathbf {z} _ {t}) \\mid \\mathcal {F} _ {t} \\right], \\quad \\mathrm {s . t .} \\quad \\mathbf {z} _ {t} \\in \\Omega ,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            371,
+            256,
+            625,
+            278
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "where ${ \\cal U } ( { \\bf z } _ { t } )$ denotes the utility function that aggregates expected portfolio returns, risks, and transaction costs along the $H$ -period investment horizon, and $\\Omega$ denotes the feasible set of portfolio allocations. Typically, feasibility on each date is given by a simplex of the long-only portfolio weights $\\Omega _ { s } = \\{ z \\in$ $\\mathbb { R } ^ { N } \\mid \\mathbf { 1 } ^ { \\top } z = 1 , z \\geq 0 \\}$ , and the multi-period feasible set is $\\Omega = \\Omega _ { t + 1 } \\times \\cdot \\cdot \\cdot \\times \\Omega _ { t + H }$ . To obtain a tractable objective, we assume a time-separable structure [28]: ",
+        "bbox": [
+            112,
+            286,
+            880,
+            357
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "equation",
+        "text": "$$\n- \\mathbb {E} \\left[ \\mathcal {U} \\left(\\mathbf {z} _ {t}\\right) \\mid \\mathcal {F} _ {t} \\right] = \\sum_ {s = t + 1} ^ {t + H} \\left[ g _ {s} \\left(z _ {s}\\right) + \\lambda h _ {s} \\left(z _ {s} - z _ {s - 1}\\right) \\right],\n$$",
+        "text_format": "latex",
+        "bbox": [
+            319,
+            367,
+            678,
+            404
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "where $g _ { s } : \\mathbb { R } ^ { N }  \\mathbb { R }$ and $h _ { s } : \\mathbb { R } ^ { N } \\times \\mathbb { R } ^ { N } \\to \\mathbb { R }$ may depend on $\\mathcal { F } _ { t }$ . The objective is additive across the planning horizon. At each stage, the expected objective decomposes into a static term determined by the current portfolio and a dynamic term depending on the rebalancing from the previous portfolio. Trading frictions can be internalized through a turnover-based regularizer applied to the rebalancing vector $z _ { s } - z _ { s - 1 }$ scaled by $\\lambda \\geq 0$ . This formulation captures the intertemporal trade-offs that matter in execution while keeping the constraint set minimal and realistic. ",
+        "bbox": [
+            112,
+            414,
+            880,
+            499
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "note the future return vector and A commonly adopted specification for $V _ { s } ~ \\in ~ \\mathbb { S } _ { + + } ^ { N }$ $g _ { s }$ is the MPC mean-variance objective. Let denote the positive definite covariance matrix, where $y _ { s } \\in \\mathbb { R } ^ { N }$ de-$s \\in \\{ t { + } 1 , \\ldots , t { + } H \\}$ . Let $\\hat { y } _ { s }$ and $\\hat { V } _ { s }$ denote their forecasted values, respectively. The mean-variance objective for a single period is ",
+        "bbox": [
+            112,
+            500,
+            880,
+            558
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "equation",
+        "text": "$$\ng _ {s} \\left(z _ {s}, \\mathcal {F} _ {t}\\right) = \\frac {\\delta}{2} z _ {s} ^ {\\top} \\hat {V} _ {s} z _ {s} - \\hat {y} _ {s} ^ {\\top} z _ {s}, \\tag {1}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            389,
+            558,
+            880,
+            583
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "where $\\delta$ is the risk parameter. This formulation preserves convexity because $\\hat { V } _ { s } \\succ 0$ , and it rewards exposure to higher expected returns while penalizing forecasted variance. ",
+        "bbox": [
+            112,
+            590,
+            880,
+            619
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "To mitigate excessive portfolio turnover, we introduce a penalty on trading activity. While the standard $L _ { 1 }$ penalty $\\| z _ { s } - z _ { s - 1 } \\| _ { 1 }$ [19] is widely employed, its non-differentiability at the origin poses challenges for first- and second-order numerical optimization methods. To ensure a smooth and well-conditioned objective, we substitute the absolute value term $| \\cdot |$ with a differentiable approximation ",
+        "bbox": [
+            112,
+            619,
+            880,
+            675
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\rho_ {\\kappa} (x) = \\sqrt {x ^ {2} + \\kappa},\n$$",
+        "text_format": "latex",
+        "bbox": [
+            431,
+            686,
+            564,
+            703
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "where $\\kappa > 0$ is a small perturbation parameter that controls the degree of smoothing. The function √ $\\rho _ { \\kappa }$ is twice differentiable, with its gradient given by $\\nabla \\rho _ { \\kappa } ( x ) = x / \\sqrt { x ^ { 2 } + \\kappa }$ . These properties yield stable gradients and bounded curvature, facilitating robust numerical optimization. For convenience, we define $\\begin{array} { r } { \\rho ( v ) = \\sum _ { i = 1 } ^ { N } \\rho _ { \\kappa } ( v _ { i } ) } \\end{array}$ where $v \\in \\mathbb { R } ^ { N }$ . Incorporating this smooth penalty, the multi-period mean-variance problem is formulated as ",
+        "bbox": [
+            112,
+            711,
+            880,
+            782
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\min  _ {\\mathbf {z} _ {t}} \\sum_ {s = t + 1} ^ {t + H} \\left[ \\frac {\\delta}{2} z _ {s} ^ {\\top} \\hat {V} _ {s} z _ {s} - \\hat {y} _ {s} ^ {\\top} z _ {s} + \\lambda \\rho (z _ {s} - z _ {s - 1}) \\right], \\tag {2}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            329,
+            791,
+            880,
+            828
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{r l} \\text {s . t .} & \\mathbf {z} _ {t} \\in \\boldsymbol {\\Omega}. \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            334,
+            835,
+            428,
+            848
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "In the conventional two-stage framework, the forecasting and decision-making processes are conducted independently. This procedure is detailed in Algorithm 1. In the forecasting stage, a model $\\phi _ { \\theta }$ , parameterized by $\\theta \\in \\Theta$ , is trained to predict future returns, and the downstream allocation problem is then ",
+        "bbox": [
+            112,
+            858,
+            880,
+            902
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "page_number",
+        "text": "4 ",
+        "bbox": [
+            492,
+            923,
+            504,
+            934
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Algorithm 1 Two-stage forecasting and portfolio optimization ",
+        "text_level": 1,
+        "bbox": [
+            115,
+            84,
+            584,
+            98
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Input: Training data $\\{ ( X _ { s } , Y _ { s } ) , s = t - T - H + 1 , \\ldots , t - H \\}$ , risk parameter $\\delta$ , penalty $\\lambda$ , smoothing factor $\\kappa$ , regularizer $\\beta$ ; ",
+        "bbox": [
+            115,
+            102,
+            880,
+            131
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Output: First-step allocation $z _ { t + 1 } ^ { * }$ ",
+        "bbox": [
+            115,
+            131,
+            381,
+            145
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Stage I (Forecasting) ",
+        "bbox": [
+            115,
+            146,
+            295,
+            159
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Run a training algorithm, such as Adam, to solve (3) and obtain a solution $\\theta ^ { * }$ ",
+        "bbox": [
+            132,
+            160,
+            714,
+            174
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Stage II (Decision-making) ",
+        "bbox": [
+            115,
+            174,
+            346,
+            187
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Compute $\\hat { Y } _ { t } = \\phi _ { \\theta ^ { \\ast } } ( X _ { t } )$ ",
+        "bbox": [
+            132,
+            187,
+            307,
+            202
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Compute $\\hat { V } _ { s }$ , $s = t + 1 , \\ldots , t + H$ based on past returns; ",
+        "bbox": [
+            132,
+            202,
+            552,
+            216
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Solve (2) to obtain $\\mathbf { z } _ { t } ^ { \\ast }$ and execute the first-step portfolio $z _ { t + 1 } ^ { * }$ ",
+        "bbox": [
+            132,
+            217,
+            594,
+            231
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "solved based on the predicted values. Let $X _ { s } \\in \\mathbb { R } ^ { L \\times N }$ denote the past $L$ -day returns for all $N$ assets on day $s$ . Let $Y _ { s } = ( y _ { s + 1 } , \\dots , y _ { s + H } ) \\in \\mathbb { R } ^ { H \\times N }$ denote the realized returns from day $s + 1$ to $s + H$ , and $\\hat { Y } _ { s } = \\phi _ { \\theta } ( X _ { s } )$ the predicted returns. On day $t$ , the model is trained using a rolling look-back window of realized returns $\\{ ( X _ { s } , Y _ { s } ) , s = t - T - H + 1 , \\ldots , t - H \\}$ with a prediction loss $\\ell _ { \\mathrm { p } } \\mathopen { } \\mathclose \\bgroup \\left( \\hat { Y } _ { s } , Y _ { s } \\aftergroup \\egroup \\right)$ plus regularization terms. In practice, the prediction loss $\\ell _ { \\mathrm { p } }$ is often the mean squared error and is estimated on mini-batches. This leads to the following training problem: ",
+        "bbox": [
+            112,
+            260,
+            880,
+            347
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\min  _ {\\theta \\in \\Theta} \\mathcal {L} _ {\\mathrm {p}} (\\theta) = \\frac {1}{T} \\sum_ {s = t - T - H + 1} ^ {t - H} \\ell_ {\\mathrm {p}} \\left(\\hat {Y} _ {s}, Y _ {s}\\right) + \\beta R (\\theta), \\tag {3}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            321,
+            357,
+            880,
+            395
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "where $R ( \\theta )$ denotes a regularization term weighted by the coefficient $\\beta \\geq 0$ . The optimization problem (3) is typically solved using a learning algorithm such as Adam [23], which yields the optimized parameters $\\theta ^ { * }$ . On a new decision date $t$ , the trained model $\\phi _ { \\theta ^ { * } }$ generates the predicted returns $\\hat { Y } _ { t }$ for the next $H$ periods. The predicted per-period covariance matrix $\\hat { V } _ { s } , s = t + 1 , \\ldots , t + H$ is estimated based on a rolling window of past returns. To ensure the covariance matrix remains positive definite, we add a small perturbation term $\\varepsilon I$ to $\\hat { V } _ { s }$ . An optimizer is then applied to solve (2) using these inputs to obtain a path of allocations $\\mathbf { z } _ { t } ^ { \\ast }$ . In the MPC approach, the investor executes the first step $z _ { t + 1 } ^ { * }$ . ",
+        "bbox": [
+            112,
+            407,
+            880,
+            507
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "In Algorithm 1, the training loss for the prediction model is agnostic to the structure and objectives of the downstream optimizer. Though computationally tractable, the separation of the forecasting and decision-making stages can lead to suboptimal portfolio choices. For instance, small forecast errors can lead to materially different portfolio choices, as demonstrated by the well-documented flaw in the Markowitz model [6]. In the multi-period setting, this problem is exacerbated by the difficulty of multi-period forecasting and the path dependence of the downstream optimization problem. Moreover, transaction costs are not considered in the forecasting stage. Frequent fluctuations in predictions can significantly diminish portfolio performance, especially when the benefits of rebalancing are largely offset by transaction costs. ",
+        "bbox": [
+            112,
+            507,
+            880,
+            634
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "4 IPMO learning framework ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            655,
+            472,
+            674
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "4.1 Problem setup ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            686,
+            315,
+            703
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "In this section, we introduce the Integrated Prediction and Multi-Period Optimization (IPMO) framework, which updates the prediction model based on the quality of the induced decisions. Given the input $X _ { s }$ , the model first generates an intermediate variable $Y _ { s } = \\phi _ { \\theta } ( X _ { s } ) \\in \\mathbb { R } ^ { H \\times N }$ . This variable defines the multi-period optimization objective in (2), denoted by $\\tilde { F }$ , where $\\ddot { Y } _ { s }$ serves as the predicted returns. The following optimization layer solves this problem to obtain the optimal multi-period allocation $\\mathbf { z } _ { s } ^ { * } ( \\theta )$ . The output variable $\\mathbf { z } _ { s } ^ { * } ( \\theta )$ is evaluated against the realized returns $Y _ { s }$ by a decision loss $\\ell _ { \\mathrm { d } } ( { \\mathbf z } _ { s } ^ { * } ( \\theta ) , Y _ { s } )$ , which measures the performance of the resulting portfolio. The general integrated learning objective is ",
+        "bbox": [
+            112,
+            709,
+            880,
+            809
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\min  _ {\\theta \\in \\Theta} \\frac {1}{T} \\sum_ {s = t - T - H + 1} ^ {t - H} \\ell_ {\\mathrm {d}} \\left(\\mathbf {z} _ {s} ^ {*} (\\theta), Y _ {s}\\right), \\tag {4}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            376,
+            819,
+            880,
+            860
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\text {s . t .} \\mathbf {z} _ {s} ^ {*} (\\theta) = \\arg \\min  _ {\\mathbf {z} _ {s} \\in \\Omega} \\tilde {F} \\bigl (\\mathbf {z} _ {s}, \\tilde {Y} _ {s} \\bigr).\n$$",
+        "text_format": "latex",
+        "bbox": [
+            383,
+            864,
+            611,
+            887
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "page_number",
+        "text": "5 ",
+        "bbox": [
+            492,
+            923,
+            502,
+            934
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Unlike the two-stage model, (4) does not evaluate the predicted returns $\\ddot { Y } _ { s }$ against the true returns $Y _ { s }$ . Intuitively, the model parameters $\\theta$ are chosen to minimize the expected decision loss induced by the downstream optimizer. Since the model $\\phi _ { \\theta }$ only affects the objective through the solution $\\mathbf { z } _ { s } ^ { * } ( \\theta )$ , the prediction accuracy is rewarded only to the extent that it improves the portfolio performance. ",
+        "bbox": [
+            112,
+            84,
+            880,
+            140
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "The integrated multi-period mean-variance optimization problem takes the bilevel form ",
+        "bbox": [
+            139,
+            141,
+            784,
+            155
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\min  _ {\\theta} \\frac {1}{T} \\sum_ {s = t - T - H + 1} ^ {t - H} \\frac {1}{H} \\sum_ {\\substack {k = s + 1 \\\\ s + H}} ^ {s + H} \\left[ - z _ {k} ^ {*} (\\theta) ^ {\\top} y _ {k} + \\frac {\\delta}{2} z _ {k} ^ {*} (\\theta) ^ {\\top} V _ {k} z _ {k} ^ {*} (\\theta) \\right], \\tag{5}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            270,
+            164,
+            880,
+            211
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\text {s . t .} \\mathbf {z} _ {s} ^ {*} (\\theta) = \\arg \\min  _ {\\mathbf {z} _ {s} \\in \\Omega} \\sum_ {k = s + 1} ^ {s + H} \\left[ \\frac {\\delta}{2} z _ {k} ^ {\\top} \\hat {V} _ {k} z _ {k} - \\hat {y} _ {k} ^ {\\top} z _ {k} + \\lambda \\rho (z _ {k} - z _ {k - 1}) \\right].\n$$",
+        "text_format": "latex",
+        "bbox": [
+            268,
+            206,
+            727,
+            244
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "The outer problem determines the model parameters $\\theta$ that minimize the decision loss, representing the multi-period mean-variance performance of the optimal portfolio produced by the inner optimization layer. The inner problem is a convex multi-period allocation program that balances predicted returns against variance, with a penalty on turnover. This bilevel formulation directly aligns the learning process with the downstream decision-making objective. Within the IPMO framework, the prediction model $\\phi _ { \\theta }$ is trained to generate forecasts that lead to optimal portfolio allocations while accounting for transaction costs. Moreover, this decision-focused objective enables the model to implicitly capture the effects of uncertainty and volatility on portfolio performance. ",
+        "bbox": [
+            112,
+            250,
+            884,
+            367
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "4.2 Methodology ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            382,
+            302,
+            399
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "The previous subsection presents an IPMO objective with an inner multi-stage portfolio program and an outer execution loss. Training such a bilevel model requires propagating gradients from the evaluation loss back to the predictor parameters. The key difficulty lies in differentiating through the inner optimizer: the gradient of the outer loss with respect to $\\theta$ depends on the Jacobian of the solution $\\mathbf { z } _ { t } ^ { * } ( \\theta )$ . For convex programs with simplex constraints and turnover penalties, computing this Jacobian analytically is intractable. Existing differentiable optimization frameworks, such as OptNet [2], CvxpyLayer [1], and BPQP [37], tackle this by applying the implicit-function theorem to the KKT system. While theoretically exact, this approach requires solving large linear systems involving KKT matrices at every backward step, which incurs substantial computational and memory costs. Each gradient evaluation entails matrix factorizations whose complexity scales cubically with problem size, and storing intermediate solver states quickly becomes prohibitive in multi-stage or high-dimensional settings. As a result, KKT-based differentiation often dominates runtime and limits scalability in IPMO training. ",
+        "bbox": [
+            112,
+            405,
+            882,
+            575
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "In contrast, we do not differentiate through the KKT system directly. Instead, we reinterpret the optimality conditions of the inner convex problem as a fixed-point equation induced by a mirror-descent map on the simplex. Concretely, the entropic mirror map yields a softmax-type multiplicative update at each stage, whose normalization operator implicitly enforces both the equality and nonnegativity constraints. As a result, the KKT multipliers never need to be formed explicitly and the sensitivity system decomposes into simple, stage-wise Jacobian-vector products. This fixed-point formulation avoids both explicit argmin differentiation and the unrolling of first-order solvers: the equilibrium allocation $\\mathbf { z } _ { t } ^ { * } ( \\theta )$ is characterized as the fixed point of the MD map, and differentiating through this relation yields efficient implicit gradients without constructing or factorizing the KKT matrix. Our approach therefore combines the geometric interpretability of mirror descent with the computational efficiency of fixed-point implicit differentiation, providing a scalable alternative to traditional KKT-based layers. ",
+        "bbox": [
+            112,
+            576,
+            882,
+            733
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "4.2.1 Mirror descent ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            747,
+            304,
+            762
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "Mirror descent (MD) [35] is a first-order method for constrained convex optimization that tailors the update to the geometry of the feasible set. It can be viewed as a generalized projection operator that approximately solves an arg min problem over a convex domain. ",
+        "bbox": [
+            112,
+            769,
+            880,
+            812
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "Let $f _ { s } : \\mathbb { R } ^ { N }  \\mathbb { R }$ be a convex function for each stage $s = t + 1 , \\ldots , t + H$ , and let ${ \\mathcal { C } } \\subseteq \\mathbb { R } ^ { N }$ be a closed convex set. Given the $m$ -th iterate $z _ { s } ^ { m } \\in \\mathcal { C }$ , let $g _ { s } ^ { \\prime \\prime \\iota }$ denote the vector of partial derivatives of $f _ { s }$ with respect to the weights of the $N$ assets. MD defines the next point as the minimizer of a local first-order model of $f$ regularized by a Bregman divergence: ",
+        "bbox": [
+            112,
+            810,
+            880,
+            869
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "equation",
+        "text": "$$\nz _ {s} ^ {m + 1} = \\arg \\min  _ {w \\in \\mathcal {C}} \\left\\{\\langle g _ {s} ^ {m}, w \\rangle + \\frac {1}{\\eta} D _ {\\psi} (w, z _ {s} ^ {m}) \\right\\}, \\tag {6}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            339,
+            877,
+            880,
+            904
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_number",
+        "text": "6 ",
+        "bbox": [
+            492,
+            923,
+            504,
+            935
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "where $w \\in { \\mathcal { C } }$ is the optimization variable, $\\eta > 0$ is the step size and $\\psi : { \\mathcal { C } } \\to \\mathbb { R }$ is a strictly convex mirror map that induces the Bregman divergence $D _ { \\psi } ( u , v ) = \\psi ( u ) - \\psi ( v ) - \\langle \\nabla \\psi ( v ) , u - v \\rangle$ , where $u , v \\in { \\mathcal { C } }$ are arbitrary points in the domain. The MD step (6) thus computes a proximal minimizer of a linearized mirror mapdivergence $\\psi$ which induc denotes the the Kullback-Leibler (KL)-th asset. With this choice, $\\begin{array} { r } { \\psi ( z _ { s } ) = \\sum _ { i = 1 } ^ { N } z _ { s , i } \\log z _ { s , i } } \\end{array}$ $\\begin{array} { r } { D _ { \\psi } ( u , v ) = \\sum _ { i = 1 } ^ { N } u _ { i } \\log \\frac { u _ { i } } { v _ { i } } - \\sum _ { i = 1 } ^ { N } ( u _ { i } - v _ { i } ) } \\end{array}$ $i$ $i$ ",
+        "bbox": [
+            110,
+            84,
+            885,
+            187
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "equation",
+        "text": "$$\nz _ {s, i} ^ {m + 1} = \\frac {z _ {s , i} ^ {m} \\exp (- \\eta g _ {s , i} ^ {m})}{\\sum_ {j = 1} ^ {N} z _ {s , j} ^ {m} \\exp (- \\eta g _ {s , j} ^ {m})}, \\qquad i = 1, \\ldots , N. \\tag {7}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            319,
+            195,
+            880,
+            231
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "This step can be interpreted as performing a single mirror-proximal solve of a convex subproblem, providing a differentiable mapping that approximates the exact arg min operator. Because feasibility is preserved automatically, the update is well suited for our setting. For a single-stage problem on the simplex, it is immediate that any optimal point is a fixed point of the MD map. The following theorem extends this property to the multi-stage case, where the feasible set is a product of simplices. The proof is left in A. ",
+        "bbox": [
+            112,
+            239,
+            884,
+            325
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Theorem 1. Let $f : \\Omega  \\mathbb { R }$ be differentiable and strongly convex. Then the mirror descent update applied stagewise as in (7) satisfies the condition that the optimal solution $\\mathbf { z } _ { t } ^ { \\ast }$ remains invariant under one iteration. ",
+        "bbox": [
+            112,
+            332,
+            882,
+            376
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "The fixed-point characterization therefore holds for the entire multi-stage allocation problem, providing a convenient basis for implicit differentiation through the inner solver. ",
+        "bbox": [
+            112,
+            384,
+            882,
+            413
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "4.2.2 Implicit differentiation of the MD fixed point ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            429,
+            561,
+            444
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Building on theorem 1, we now use the MD fixed point to construct a differentiable surrogate for the inner optimization. The MD update at each stage takes the form $\\Phi _ { s } ( \\mathbf { z } _ { t } ^ { * } , \\theta ) = \\mathrm { N o r m a l i z e } \\left( z _ { s } \\odot \\right.$ $\\exp \\big ( - \\eta \\nabla _ { z _ { s } } \\tilde { F } ( { \\mathbf z } _ { t } ^ { * } , \\tilde { Y } _ { s } ) \\big ) \\big ) , s = t + 1 , \\ldots , t + H$ , where $\\nabla _ { z _ { s } } \\tilde { F } ( \\mathbf { z } _ { t } ^ { * } , \\tilde { Y } _ { s } )$ denotes the gradient with respect to the $s$ -th stage allocation, and $\\odot$ denotes the Hadamard (elementwise) product. We collect $\\Phi (  { \\mathbf { z } } _ { t } ^ { * } , \\theta ) =$ $( \\Phi _ { t + 1 } , \\dots , \\Phi _ { t + H } )$ . By theorem 1, the optimal matrix $\\mathbf { z } _ { t } ^ { \\ast }$ satisfies the fixed-point relation ",
+        "bbox": [
+            112,
+            451,
+            882,
+            538
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\mathbf {z} _ {t} ^ {*} = \\Phi \\left(\\mathbf {z} _ {t} ^ {*}, \\theta\\right), \\quad \\mathbf {z} _ {t} ^ {*} \\in \\Omega , \\tag {8}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            401,
+            548,
+            880,
+            564
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "which serves as a differentiable surrogate for the exact arg min. Differentiating this fixed-point relation with respect to $\\theta$ yields the implicit gradient expression in proposition 1, and the full derivation is provided in B. ",
+        "bbox": [
+            112,
+            571,
+            882,
+            615
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Proposition 1. Let $\\partial _ { \\mathbf { z } } \\Phi ( \\mathbf { z } , \\theta ) \\in \\mathbb { R } ^ { ( N H ) \\times ( N H ) }$ denote the Jacobian of $\\Phi$ with respect to z and suppose $I - \\partial _ { \\mathbf { z } _ { t } ^ { * } } \\Phi ( \\mathbf { z } _ { t } ^ { * } , \\theta )$ is invertible. Then, we have ",
+        "bbox": [
+            112,
+            621,
+            882,
+            653
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} = \\left(I - \\partial_ {\\mathbf {z} _ {t} ^ {*}} \\Phi (\\mathbf {z} _ {t} ^ {*}, \\theta)\\right) ^ {- 1} \\frac {\\partial \\Phi (\\mathbf {z} _ {t} ^ {*} , \\theta)}{\\partial \\theta}. \\tag {9}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            363,
+            663,
+            880,
+            692
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "The expression in (9) demonstrates that the gradient of the fixed-point solution can be computed without explicitly differentiating through the KKT system. However, the assumption of invertibility may be violated in cases of degeneracy in the active set [2]. To mitigate this issue, we impose a small lower bound of $1 0 ^ { - 8 }$ on the coordinates, thereby preventing them from attaining exact zeros and promoting stable fixed-point sensitivity computations in practice. We next show that, at points where the fixed-point mapping is differentiable, the fixed-point sensitivity matches the classical KKT-based sensitivity. ",
+        "bbox": [
+            112,
+            699,
+            884,
+            787
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Theorem 2. Suppose that the KKT system of (2) satisfies strict complementarity. Then the Jacobian ${ \\partial \\mathbf { z } _ { t } ^ { * } } / { \\partial \\theta }$ obtained from the fixed-point formula (9) is identical to the sensitivity derived by differentiating the KKT system. ",
+        "bbox": [
+            112,
+            793,
+            882,
+            837
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Proof. See C. ",
+        "text_level": 1,
+        "bbox": [
+            115,
+            844,
+            216,
+            858
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "In practice, the matrix inverse in (9) is circumvented by expressing it as a truncated Neumann series. Specifically, in our setting, the MDFP update exhibits local contractiveness in a neighborhood of the fixed point. This property is shown in proposition 2 and proved in D. ",
+        "bbox": [
+            112,
+            858,
+            882,
+            902
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "page_number",
+        "text": "7 ",
+        "bbox": [
+            492,
+            923,
+            504,
+            934
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "code",
+        "sub_type": "algorithm",
+        "code_caption": [
+            "Algorithm 2 IPMO: integrated multi-period optimization "
+        ],
+        "code_body": "Input: Training data $\\{(X_s,Y_s),s = t - T - H + 1,\\dots ,t - H\\}$ risk parameter $\\delta$ penalty $\\lambda$ smoothing factor $\\kappa$ stepsize $\\eta$ fixed-point order $B$ Output: First-step allocation $z_{t + 1}^{*}$ Initialize parameters $\\theta$ for each training step do for $s = t - T - H + 1,\\ldots ,t - H$ do Predict future returns $\\tilde{Y}_s = \\phi_\\theta (X_s)$ Estimate covariance $\\hat{V}_k$ $k = s + 1,\\dots ,s + H$ Solve the multi-period problem (2); Compute loss contribution $\\ell_{\\mathrm{d}}(\\mathbf{z}_{s}^{*}(\\theta),Y_{s})$ Compute $\\frac{\\partial\\mathbf{z}_s^*(\\theta)}{\\partial\\theta}$ using (10); end for Update $\\theta$ using back-propagation with $\\nabla_{\\theta}\\mathcal{L}_{\\mathrm{d}}(\\theta)$ in (11);   \nend for   \nCompute $\\tilde{Y}_t = \\phi_{\\theta^*}(X_t)$ Compute $\\hat{V}_s$ $s = t + 1,\\dots ,t + H$ based on past returns; Solve (2) to obtain $\\mathbf{z}_t^*$ and execute the first-step portfolio $z_{t + 1}^{*}$ ",
+        "bbox": [
+            114,
+            102,
+            882,
+            351
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Proposition 2. When η is small enough, the spectral radius of the Jacobian $\\partial _ { \\mathbf { z } _ { t } ^ { * } } \\Phi ( \\mathbf { z } _ { t } ^ { * } , \\theta )$ is strictly less than 1. ",
+        "bbox": [
+            112,
+            376,
+            882,
+            404
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "By proposition 2, we obtain $\\begin{array} { r } { ( I - \\partial _ { \\mathbf { z } _ { t } ^ { * } } \\Phi ( \\mathbf { z } _ { t } ^ { * } , \\theta ) ) ^ { - 1 } = \\sum _ { b = 0 } ^ { \\infty } ( \\partial _ { \\mathbf { z } _ { t } ^ { * } } \\Phi ( \\mathbf { z } _ { t } ^ { * } , \\theta ) ) ^ { b } } \\end{array}$ . Hence, the gradient can be approximated as ",
+        "bbox": [
+            112,
+            414,
+            882,
+            443
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} \\approx \\sum_ {b = 0} ^ {B} \\left[ \\partial_ {\\mathbf {z} _ {t} ^ {*}} \\Phi \\left(\\mathbf {z} _ {t} ^ {*}, \\theta\\right) \\right] ^ {b} \\frac {\\partial \\Phi \\left(\\mathbf {z} _ {t} ^ {*} , \\theta\\right)}{\\partial \\theta}, \\tag {10}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            366,
+            443,
+            880,
+            479
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "where $B$ is a small truncation order. This formulation avoids explicit matrix inversion and provides a consistent first-order approximation of the exact gradient while significantly reducing runtime and memory costs during backpropagation. ",
+        "bbox": [
+            112,
+            485,
+            882,
+            527
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "In our setting, the mirror map is entropic and the update in (7) reduces to a softmax-like rescaling on each simplex. At the fixed point, the corresponding KKT conditions are absorbed into the per-stage normalization constants, so that the Jacobian $\\partial _ { \\mathbf { z } _ { t } ^ { * } } \\Phi$ inherits a sparse block-diagonal structure across stages. Each Neumann term in (10) can therefore be evaluated via inexpensive Jacobian-vector products that reuse the same elementwise multiplications and normalizations as the forward MD map, without assembling or factorizing a dense KKT matrix. Consequently, the fixed-point implicit gradient matches the sensitivity of KKT-based differentiation, but with significantly lower memory footprint and runtime in high-dimensional or long-horizon portfolio problems. ",
+        "bbox": [
+            112,
+            529,
+            884,
+            643
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "4.3 Framework architecture ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            659,
+            408,
+            674
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "The IPMO framework integrates optimization and learning into a single differentiable pipeline. Given a rolling window of past returns, the prediction model $\\phi _ { \\theta }$ generates per-stage optimization parameters. The inner multi-stage allocation problem is solved on the simplex of portfolio weights with a smoothed objective (here we use ADMM), and the resulting multi-period allocations are evaluated by a downstream decision loss that guides the parameter updates. The overall procedure is summarized by Algorithm 2 and visualized by Figure 1. The forward pass computes optimal allocations through the inner solver, while the backward pass propagates gradients via the mirror-descent fixed-point (MDFP) formulation. ",
+        "bbox": [
+            112,
+            682,
+            882,
+            783
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "4.3.1 Forward pass ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            799,
+            290,
+            813
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "The forward pass maps a window of past returns to multi-period allocations by solving the smoothed allocation problem. For each training date $s \\in \\{ t - T - H + 1 , \\ldots , t - H \\}$ , the predictor $\\phi _ { \\theta }$ produces multi-period forecasts of returns $\\ddot { Y } _ { s }$ . The covariance $\\psi _ { k } , \\ k = s + 1 , \\ldots , s + H$ can be estimated using simple methods. Given these parameters and the pre-trade allocation, the inner optimization follows (2). The optimizer directly solves this convex program to obtain $\\begin{array} { r } { { \\bf z } _ { s } ^ { * } ( \\theta ) = \\arg \\operatorname* { m i n } _ { { \\bf z } _ { s } \\in \\Omega } \\tilde { F } ( { \\bf z } _ { s } , \\tilde { Y } _ { s } ) } \\end{array}$ . The resulting ",
+        "bbox": [
+            112,
+            820,
+            884,
+            892
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_number",
+        "text": "8 ",
+        "bbox": [
+            492,
+            925,
+            502,
+            934
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "image",
+        "img_path": "images/f2441c396cf8e6e5d176eb2bd1e6012c47049bfe10329f0232d4e23b0be35ab6.jpg",
+        "image_caption": [
+            "Figure 1: Overview of IPMO. The predictor generates multi-period return predictions, which are passed to a differentiable optimization layer to produce the portfolio allocations. The fixed-point formulation enables implicit differentiation through the solver, allowing the entire multi-period decision process to be trained jointly. "
+        ],
+        "image_footnote": [],
+        "bbox": [
+            131,
+            84,
+            884,
+            236
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "allocation $\\mathbf { z } _ { s } ^ { * } ( \\theta )$ defines the forward decision output for date $s$ , which is evaluated by the downstream decision loss in (5). Consistent with the MPC approach, the network outputs an entire sequence of multiperiod portfolio weights, while only the first-step allocation is executed. All solver hyperparameters are kept unchanged between training and testing. ",
+        "bbox": [
+            112,
+            328,
+            882,
+            387
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "4.3.2 Backward pass ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            401,
+            302,
+            416
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "The backward pass propagates gradients from the evaluation loss back to the predictor parameters. The gradient of the empirical loss with respect to $\\theta$ follows the chain rule: ",
+        "bbox": [
+            112,
+            423,
+            882,
+            453
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\nabla_ {\\theta} \\mathcal {L} _ {\\mathrm {d}} (\\theta) = \\frac {1}{T} \\sum_ {s = t - T - H + 1} ^ {t - H} \\frac {\\partial \\ell_ {\\mathrm {d}} \\left(\\mathbf {z} _ {s} ^ {*} (\\theta) , Y\\right)}{\\partial \\mathbf {z} _ {s} ^ {*} (\\theta)} \\frac {\\partial \\mathbf {z} _ {s} ^ {*} (\\theta)}{\\partial \\theta}. \\tag {11}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            319,
+            462,
+            880,
+            501
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "The first partial derivative represents task-level sensitivity with respect to realized returns and risks. The second partial derivative differentiates through the inner allocation program, whose solution $\\mathbf { z } _ { s } ^ { * } ( \\theta )$ is defined by the MDFP layer (8) and its implicit gradient expression (9). The parameters are updated based on the average gradient of the training batch. ",
+        "bbox": [
+            112,
+            511,
+            882,
+            569
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "5 Experiments ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            590,
+            309,
+            608
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "To demonstrate the effectiveness of the IPMO framework and the proposed algorithm, we present computational results on real market data. Our analysis is divided into two parts. The first part compares outcomes of the IPMO model with the two-stage model under the MPC setting. We connect the portfolio behavior to the underlying models by analyzing the dynamics of portfolio weights and rolling predictions. The second part evaluates the efficiency of different end-to-end learning frameworks. We benchmark our differentiable optimization layer against the most commonly used methods in differentiable optimization. ",
+        "bbox": [
+            112,
+            619,
+            882,
+            706
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "5.1 Data and computational setup ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            722,
+            472,
+            739
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "We use daily asset returns for seven exchange-traded funds (ETFs) of major asset classes: VTI (Vanguard Total Stock Market ETF), IWM (iShares Russell 2000 ETF), AGG (iShares Core U.S. Aggregate Bond ETF), LQD (iShares iBoxx Investment Grade Corporate Bond ETF), MUB (iShares National Muni Bond ETF), DBC (Invesco DB Commodity Index Tracking Fund), and GLD (SPDR Gold Shares) over the time period 2011-2024, following Uysal et al. [38]. We keep the first eight years (2011-2018/12) for hyperparameter tuning and the remaining six years (2019-2024) for out-of-sample testing. ",
+        "bbox": [
+            112,
+            745,
+            882,
+            829
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "We consider two standard neural networks commonly used in multi-period time series forecasting and return prediction: the RLinear model [31] with L2 regularization and the CNN-LSTM model [34]. We experiment with both simple and sophisticated models to demonstrate the performance gains of endto-end learning under different model complexities. In the RLinear model, each asset return series is independently modeled by a single fully connected layer, and we average historical returns over five-day ",
+        "bbox": [
+            112,
+            831,
+            882,
+            902
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_number",
+        "text": "9 ",
+        "bbox": [
+            492,
+            923,
+            504,
+            935
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "image",
+        "img_path": "images/b8e42ac992a9170a08b58cd4f4efef403a22c55220521b3c9748fc6c9361b8f3.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            159,
+            86,
+            835,
+            200
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "image",
+        "img_path": "images/dfc3978a70cc7f2b9dd3a85686117cbf23cb3febce5429cb0e3b1466ff842ea6.jpg",
+        "image_caption": [
+            "Figure 2: Optimal portfolio cumulative returns net of transaction costs for six strategies over in-sample (top) and out-of-sample (bottom) periods. "
+        ],
+        "image_footnote": [],
+        "bbox": [
+            159,
+            206,
+            836,
+            324
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "intervals to mitigate estimation noise. The CNN-LSTM model applies a pooled model for all assets, as in Murray et al. [34]. The CNN-LSTM model uses a Convolutional Neural Network (CNN) with 64 channels, a kernel size of 5, stride of 1, and the ReLU activation. The CNN output is passed into a max-pooling layer with a kernel size of 2. The Long Short-Term Memory (LSTM) model has two layers with a hidden dimension of 64 and generates the final predictions. Both neural networks incorporate reversible instance normalization to address the distribution shift problem [22]. The predictive models are trained to predict the returns for the next $H$ days using the past 120-day historical returns and are re-trained every 20 days using a look-back window of 250 days. To keep the estimation process simple, the covariance estimation follows a simple EWMA method, updated daily using the historical returns of the past 20 days. The portfolio is rebalanced daily. On each day, the model generates portfolio weights over the prediction horizon, but only the allocation for the next period is applied, following Boyd et al. [10]. The hyperparameters include the learning rate $\\gamma \\in \\{ 0 . 0 0 1 , 0 . 0 0 2 , 0 . 0 0 5 , 0 . 0 1 \\}$ , the turnover penalty $\\lambda \\in \\{ 0 . 0 0 0 1 , 0 . 0 0 0 5 , 0 . 0 0 1 , 0 . 0 0 5 , 0 . 0 1 \\}$ , and the planning horizon $H \\in \\{ 1 , 5 , 1 0 , 2 0 , 5 0 \\}$ . In addition, we tune the L2 regularizer for the linear model over the range $\\{ 0 , 0 . 0 0 0 1 , 0 . 0 0 1 \\}$ . For both the two-stage (TS) and IPMO frameworks, we select the hyperparameters based on the in-sample Sharpe ratio and turnover rate. Among the ten hyperparameters with the highest Sharpe ratios, we choose the one with the lowest turnover. ",
+        "bbox": [
+            112,
+            391,
+            882,
+            632
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "We benchmark our IPMO framework against standard portfolio allocation baselines, including an equal-weighted (EW) portfolio and a classical mean-variance (MV) portfolio. The EW portfolio uses constant $1 / N$ weights for all $N$ assets, rebalanced daily. The MV portfolio is constructed using the sample mean of the past 120-day returns and the same covariance estimators as above. Each predictive model is evaluated within the two-stage and the IPMO frameworks. We report results both before and after accounting for 20bps transaction costs. All experiments were conducted on a machine with an Intel $\\mathbf { ( R ) }$ CoreTM Ultra 9 285H CPU and an NVIDIA GeForce RTX 5070 Laptop GPU (8 GB), using PyTorch 2.2 with CUDA 12.4. ",
+        "bbox": [
+            112,
+            632,
+            880,
+            747
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.2 Comparison of performance ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            764,
+            445,
+            780
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Figure 2 shows cumulative returns net of transaction costs for in-sample and out-of-sample periods, and performance statistics are reported in Table 1. In both periods, the EW and MV benchmarks underperform the predictive models in terms of cumulative returns, and IPMO delivers consistently stronger risk-adjusted performance than the two-stage model for both predictors, gross and net of transaction costs. ",
+        "bbox": [
+            112,
+            787,
+            880,
+            857
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "In the in-sample period, with the stronger CNN-LSTM predictor, the IPMO model attains the best risk-adjusted performance, achieving the highest Sharpe ratio of 1.06, the highest Calmar ratio of 1.18, and the highest return to average drawdown ratio of 4.56 net of transaction costs. With the weaker ",
+        "bbox": [
+            112,
+            858,
+            880,
+            902
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "page_number",
+        "text": "10 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "table",
+        "img_path": "images/f47198ebf73480912c29431cf81629c0d0ada6a28452b2e74af0a318f1b46923.jpg",
+        "table_caption": [
+            "Table 1: Annualized portfolio performance statistics gross and net of transaction costs over in-sample (2011-2018) and out-of-sample (2019-2024) periods. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Portfolio</td><td>Return</td><td>Volatility</td><td>Sharpe</td><td>MDD</td><td>Calmar</td><td>Return/ave.DD</td><td>Turnover</td></tr><tr><td colspan=\"8\">2011-2018/12 Gross of transaction costs</td></tr><tr><td>CNN-LSTM IPMO</td><td>0.1451</td><td>0.1329</td><td>1.0922</td><td>0.1199</td><td>1.2100</td><td>4.6451</td><td>0.0850</td></tr><tr><td>CNN-LSTM TS</td><td>0.1047</td><td>0.1128</td><td>0.9279</td><td>0.1627</td><td>0.6436</td><td>2.4530</td><td>0.0967</td></tr><tr><td>RLinear IPMO</td><td>0.1021</td><td>0.0983</td><td>1.0383</td><td>0.0931</td><td>1.0964</td><td>5.9420</td><td>0.4719</td></tr><tr><td>RLinear TS</td><td>0.0898</td><td>0.1219</td><td>0.7362</td><td>0.2031</td><td>0.4420</td><td>1.7808</td><td>0.6923</td></tr><tr><td>EW</td><td>0.0217</td><td>0.0596</td><td>0.3640</td><td>0.1604</td><td>0.1353</td><td>0.5969</td><td>0.0028</td></tr><tr><td>MV</td><td>-0.0242</td><td>0.1246</td><td>-0.1940</td><td>0.3745</td><td>-0.0646</td><td>-0.1229</td><td>0.2513</td></tr><tr><td colspan=\"8\">2011-2018/12 Net of transaction costs</td></tr><tr><td>CNN-LSTM IPMO</td><td>0.1411</td><td>0.1329</td><td>1.0623</td><td>0.1199</td><td>1.1767</td><td>4.5590</td><td>0.0850</td></tr><tr><td>CNN-LSTM TS</td><td>0.1000</td><td>0.1128</td><td>0.8860</td><td>0.1722</td><td>0.5806</td><td>2.1984</td><td>0.0967</td></tr><tr><td>RLinear IPMO</td><td>0.0783</td><td>0.0983</td><td>0.7965</td><td>0.0931</td><td>0.8412</td><td>4.5172</td><td>0.4719</td></tr><tr><td>RLinear TS</td><td>0.0550</td><td>0.1218</td><td>0.4516</td><td>0.2423</td><td>0.2271</td><td>0.7071</td><td>0.6922</td></tr><tr><td>EW</td><td>0.0215</td><td>0.0596</td><td>0.3603</td><td>0.1607</td><td>0.1336</td><td>0.5874</td><td>0.0028</td></tr><tr><td>MV</td><td>-0.0366</td><td>0.1246</td><td>-0.2938</td><td>0.4144</td><td>-0.0884</td><td>-0.1714</td><td>0.2513</td></tr><tr><td colspan=\"8\">2019-2024/12 Gross of transaction costs</td></tr><tr><td>CNN-LSTM IPMO</td><td>0.2591</td><td>0.1921</td><td>1.3490</td><td>0.2271</td><td>1.1410</td><td>5.5592</td><td>0.0740</td></tr><tr><td>CNN-LSTM TS</td><td>0.1985</td><td>0.1566</td><td>1.2673</td><td>0.1881</td><td>1.0552</td><td>4.1896</td><td>0.0862</td></tr><tr><td>RLinear IPMO</td><td>0.1815</td><td>0.1463</td><td>1.2404</td><td>0.1668</td><td>1.0881</td><td>5.0095</td><td>0.5543</td></tr><tr><td>RLinear TS</td><td>0.1730</td><td>0.1919</td><td>0.9017</td><td>0.2660</td><td>0.6506</td><td>1.9801</td><td>0.7351</td></tr><tr><td>EW</td><td>0.0705</td><td>0.1008</td><td>0.6994</td><td>0.2073</td><td>0.3400</td><td>2.0793</td><td>0.0043</td></tr><tr><td>MV</td><td>0.1479</td><td>0.1898</td><td>0.7794</td><td>0.3318</td><td>0.4459</td><td>1.3533</td><td>0.1797</td></tr><tr><td colspan=\"8\">2019-2024/12 Net of transaction costs</td></tr><tr><td>CNN-LSTM IPMO</td><td>0.2558</td><td>0.1920</td><td>1.3319</td><td>0.2271</td><td>1.1264</td><td>5.4880</td><td>0.0740</td></tr><tr><td>CNN-LSTM TS</td><td>0.1943</td><td>0.1566</td><td>1.2407</td><td>0.1893</td><td>1.0264</td><td>4.0020</td><td>0.0862</td></tr><tr><td>RLinear IPMO</td><td>0.1536</td><td>0.1463</td><td>1.0500</td><td>0.1668</td><td>0.9208</td><td>4.2395</td><td>0.5543</td></tr><tr><td>RLinear TS</td><td>0.1363</td><td>0.1919</td><td>0.7101</td><td>0.3105</td><td>0.4390</td><td>1.3159</td><td>0.7349</td></tr><tr><td>EW</td><td>0.0702</td><td>0.1008</td><td>0.6966</td><td>0.2073</td><td>0.3385</td><td>2.0612</td><td>0.0043</td></tr><tr><td>MV</td><td>0.1392</td><td>0.1898</td><td>0.7337</td><td>0.3324</td><td>0.4189</td><td>1.2442</td><td>0.1797</td></tr></table>",
+        "bbox": [
+            179,
+            122,
+            821,
+            458
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "RLinear predictor, overall performance declines for both methods, but the advantage of the IPMO model persists. The RLinear IPMO model achieves a higher annualized return than the RLinear two-stage model ( $0 . 0 8 > 0 . 0 6$ ) and shows significantly better risk-adjusted performance in terms of the Sharpe ratio ( $0 . 8 0 > 0 . 4 5$ ) and the smallest maximum drawdown of 0.09. The differences between the IPMO and the two-stage model in terms of the Calmar ratio and the return to average drawdown ratio are evident (0.84 $> 0 . 2 3$ , $2 . 4 6 > 0 . 7 1$ ). The EW and MV benchmarks record the lowest Sharpe ratios, 0.36 and -0.29, respectively. ",
+        "bbox": [
+            112,
+            480,
+            882,
+            580
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "In the out-of-sample period, a similar pattern holds. The CNN-LSTM IPMO model dominates across all metrics except volatility, achieving the highest Sharpe ratio of 1.33, the highest Calmar ratio of 1.13, and the highest return to average drawdown ratio of 5.49 net of transaction costs. Under the weaker RLinear predictor, the IPMO model continues to outperform the two-stage model consistently across all performance measures. Notably, the RLinear two-stage model slightly underperforms the MV benchmark in Sharpe ratio $0 . 7 1 < 0 . 7 3$ ) net of transaction costs, indicating the limited effectiveness of two-stage training when predictive power is relatively weak. ",
+        "bbox": [
+            112,
+            580,
+            880,
+            678
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Furthermore, the IPMO model trades less frequently than the two-stage model, exhibiting 2%-20% lower turnover rates, both in sample and out of sample. Consistently, the performance of the IPMO models deteriorates slightly less than the two-stage models net of transaction costs. During the in-sample period, the annualized returns decline by $0 . 4 0 \\%$ and 0.47% for the IPMO and two-stage CNN-LSTM models, respectively. With the RLinear predictor, the reductions are much more significant, 2.38% for the IPMO model and $3 . 4 8 \\%$ for the two-stage model. During the out-of-sample period, the annualized returns decrease by $0 . 3 3 \\%$ for the CNN-LSTM IPMO model and 0.42% for the CNN-LSTM two-stage model. For RLinear models, the drops are 2.79% and 3.67%. Overall, the IPMO models maintain their performance better than the two-stage models in terms of risk-adjusted returns and drawdowns via more cost-efficient portfolio adjustments. Although the performance statistics are primarily determined by the prediction model, the IPMO framework delivers robust and consistent improvements over the two-stage method in the multi-period setting. ",
+        "bbox": [
+            112,
+            678,
+            880,
+            850
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Next, we visualize the portfolio weights over time using a heatmap in Figure 3. For RLinear, the two-stage model tends to hold large positions across several assets and frequently makes abrupt shifts in the set of holdings. Instead, the RLinear IPMO model exhibits smoother trajectories, where weight ",
+        "bbox": [
+            112,
+            850,
+            880,
+            895
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "page_number",
+        "text": "11 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            936
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "image",
+        "img_path": "images/97513a45bb57e253eaaf4949c8fafcc3fe3c21074e2e5b83c4fa97ce1e33ec83.jpg",
+        "image_caption": [
+            "Figure 3: Optimal portfolio weights across seven ETFs for four strategies over in-sample (top) and outof-sample (bottom) periods. "
+        ],
+        "image_footnote": [],
+        "bbox": [
+            159,
+            177,
+            836,
+            420
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "image",
+        "img_path": "images/ecc0838d16b8023729e94b046ceae004dbd2a3d005b6d2446f43e140bb780c82.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            121,
+            659,
+            418,
+            760
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "image",
+        "img_path": "images/9086f2fb32e53fadf9b0f1ad63e8f63f879300d771fd5cff39bf82b37801d921.jpg",
+        "image_caption": [
+            "Figure 4: Average total variation of out-of-sample portfolio weights for four strategies over nonoverlapping 20-day windows. "
+        ],
+        "image_footnote": [],
+        "bbox": [
+            579,
+            659,
+            875,
+            760
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_number",
+        "text": "12 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "table",
+        "img_path": "images/0895a0baa4982cf5d8b10bfb2ea294179cd1308f51a4f6d8f26014a61b771d78.jpg",
+        "table_caption": [
+            "Table 2: Sharpe ratios across different prediction horizons. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>H</td><td>RLinear IPMO</td><td>RLinear TS</td><td>CNN-LSTM IPMO</td><td>CNN-LSTM TS</td></tr><tr><td>1</td><td>0.5231</td><td>0.4165</td><td>0.7555</td><td>0.6690</td></tr><tr><td>5</td><td>0.8156</td><td>0.7101</td><td>1.0891</td><td>0.7145</td></tr><tr><td>10</td><td>0.7278</td><td>0.6441</td><td>1.1624</td><td>1.0392</td></tr><tr><td>20</td><td>0.8577</td><td>0.6974</td><td>1.1679</td><td>1.0818</td></tr><tr><td>50</td><td>1.0500</td><td>0.7738</td><td>1.3319</td><td>1.2407</td></tr></table>",
+        "bbox": [
+            258,
+            107,
+            739,
+            181
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "table",
+        "img_path": "images/905e33a86b4f6bf7e4b6c6ce3f75ab1a300f995373c943578c4075eb7aa57054.jpg",
+        "table_caption": [
+            "Table 3: Mean squared forecast error across different prediction horizons. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>H</td><td>RLinear IPMO</td><td>RLinear TS</td><td>CNN-LSTM IPMO</td><td>CNN-LSTM TS</td></tr><tr><td>1</td><td>1.13 × 10-4</td><td>1.10 × 10-4</td><td>1.62 × 10-4</td><td>1.06 × 10-4</td></tr><tr><td>5</td><td>1.14 × 10-4</td><td>1.09 × 10-4</td><td>2.35 × 10-4</td><td>1.07 × 10-4</td></tr><tr><td>10</td><td>1.16 × 10-4</td><td>1.09 × 10-4</td><td>2.72 × 10-4</td><td>1.07 × 10-4</td></tr><tr><td>20</td><td>1.14 × 10-4</td><td>1.11 × 10-4</td><td>2.93 × 10-4</td><td>1.06 × 10-4</td></tr><tr><td>50</td><td>1.18 × 10-4</td><td>1.09 × 10-4</td><td>3.23 × 10-4</td><td>1.08 × 10-4</td></tr></table>",
+        "bbox": [
+            258,
+            217,
+            739,
+            294
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "adjustments occur in smaller increments and remain stable over longer intervals. For CNN-LSTM, both models maintain highly concentrated positions, holding a single asset for extended periods. Nonetheless, the two-stage model still exhibits instantaneous reallocations occasionally, while the IPMO model shows a buy-and-hold behavior and the reallocation frequency is more consistent. ",
+        "bbox": [
+            110,
+            318,
+            880,
+            374
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "Figure 4 reports the rolling 20-day total variation (TV) of portfolio weights. The difference in allocation behavior observed in Figure 3 is clearly reflected in their TV dynamics. For RLinear, the two-stage model exhibits both higher peak values and stronger fluctuations, implying large and frequent reallocations among assets. In contrast, the IPMO model keeps TV within a consistently lower and narrower range, indicating smoother transitions and gradual, small-magnitude adjustments over time. For CNN-LSTM, both models achieve much lower overall TV levels, consistent with their concentrated and long-holding allocation patterns. Yet, the two-stage model still displays occasional surges in TV, suggesting abrupt switches, while the IPMO model’s TV remains organized around two discrete levels, approximately 0 and 0.105, corresponding to long stationary phases punctuated by short, well-defined rebalancing events. This discrete switching pattern signifies a highly organized low-frequency turnover regime. Overall, these results confirm that the IPMO model delivers more temporally stable and coherent allocation patterns across both predictor types. ",
+        "bbox": [
+            110,
+            375,
+            884,
+            545
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "To evaluate whether the performance advantage of the IPMO model persists across different planning horizons and whether this advantage stems from improved accuracy of return predictions, we report outof-sample Sharpe ratios and mean squared forecast error (MSE) for each $H$ in Table 2 and Table 3, and visualize their joint behavior in Figure 5. Across all configurations, the IPMO model consistently attains higher Sharpe ratios than the two-stage benchmark. For both the IPMO model and the twostage model, Sharpe ratios generally improve with longer horizons and reach their highest values when $H { = } 5 0$ . It is worth noting that when $H { = } 1$ , corresponding to a single-period formulation, all methods deliver their lowest Sharpe ratio. This degradation reflects the two limitations discussed earlier: the inability of a single-stage objective to internalize the intertemporal impact of transaction costs and the absence of multi-period coupling, which leads to inconsistent forecasts and conflicting signals. Examining model-specific patterns, the RLinear predictor displays a modest dip in Sharpe ratio around $H { = } 1 0$ , after which the gap shifts decisively in favor of the IPMO model. For the higher-capacity CNN-LSTM predictor, performance improves almost monotonically with $H$ , and the IPMO model maintains a clear lead throughout. The persistence of this gap across predictors indicates that the advantage of IPMO is robust. ",
+        "bbox": [
+            115,
+            546,
+            882,
+            758
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "The MSE results further clarify the source of these gains in Sharpe ratio. Under RLinear, the IPMO model attains slightly higher MSE than the two-stage model across all horizons, yet consistently achieves superior Sharpe ratios. This pattern indicates that the IPMO model sacrifices a small amount of pointwise predictive accuracy in exchange for reduced decision error, producing forecasts that align more closely with the multi-period, transaction-cost-aware objective. For CNN-LSTM, the two-stage model shows the lowest and almost horizon-invariant MSE, suggesting that it has reached the accuracy limit achievable by the underlying architecture, which directly contributes to its performance improvement. In contrast, the IPMO model produces the largest MSE, and this discrepancy grows systematically with $H$ . This reflects that, with a higher-capacity prediction model such as CNN-LSTM, a larger planning window enables the end-to-end objective to induce forecast adjustments that depart more substantially from pointwise ",
+        "bbox": [
+            110,
+            758,
+            882,
+            902
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "page_number",
+        "text": "13 ",
+        "bbox": [
+            489,
+            923,
+            509,
+            935
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "image",
+        "img_path": "images/2dbeac73ee68481d8261b09cf110b33acfd4440a2b84c9e5e2bec30a4076f8a9.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            196,
+            84,
+            489,
+            202
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "image",
+        "img_path": "images/79814e32c74afd773276aa2a770acd2af4fbc5d1e30a5827a2f63a20d5ceea4a.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            497,
+            83,
+            803,
+            200
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "image",
+        "img_path": "images/7f0503a67a521bdbac9e603c5ba1a62089c91bea62ada6969a185deffa9db400.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            196,
+            203,
+            487,
+            336
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "image",
+        "img_path": "images/8ad5758dc0417bef7baff13ced7dc5a5edf6bd95935b8e34aca492d846271c53.jpg",
+        "image_caption": [
+            "Figure 5: Sharpe ratios (left) and MSE (right) across forecasting horizons for CNN-LSTM (top) and RLinear (bottom) models. "
+        ],
+        "image_footnote": [],
+        "bbox": [
+            497,
+            203,
+            803,
+            336
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "table",
+        "img_path": "images/a09975aed8ac6b7a8d6e8ed9386dc6da4cc43aae6d7aa56e22e6a058f22c04ac.jpg",
+        "table_caption": [
+            "Table 4: Runtime comparison across horizons based on 200 epochs, with lower values indicating better performance. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Method</td><td colspan=\"10\">Horizon</td></tr><tr><td>10</td><td>20</td><td>30</td><td>40</td><td>50</td><td>60</td><td>70</td><td>80</td><td>90</td><td>100</td></tr><tr><td>MDFP</td><td>3.57</td><td>3.63</td><td>3.67</td><td>3.74</td><td>3.81</td><td>3.88</td><td>3.93</td><td>3.94</td><td>4.15</td><td>4.26</td></tr><tr><td>BPQP</td><td>1.54</td><td>2.73</td><td>3.66</td><td>5.03</td><td>6.63</td><td>7.74</td><td>9.11</td><td>10.78</td><td>12.30</td><td>14.01</td></tr><tr><td>CvxpyLayer</td><td>4.01</td><td>7.65</td><td>11.27</td><td>21.69</td><td>23.49</td><td>26.24</td><td>36.32</td><td>48.41</td><td>64.29</td><td>93.00</td></tr></table>",
+        "bbox": [
+            203,
+            432,
+            794,
+            502
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "accuracy in order to encode richer intertemporal structure relevant for the multi-period decision problem. Despite these larger deviations, the IPMO model still attains the best post-fee performance, indicating that the resulting biases are decision-useful and shape the forecast path in a way that more effectively supports multi-period allocation. ",
+        "bbox": [
+            112,
+            525,
+            882,
+            583
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "5.3 Comparison of scalability ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            599,
+            420,
+            617
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "To evaluate computational efficiency, we compare the proposed MDFP layer with two state-of-the-art differentiable convex optimizers: BPQP and CvxpyLayer. All models are trained end-to-end under the same experimental pipeline using the RLinear predictor. We report the average time per training epoch. We also ran CNN-LSTM and observed qualitatively similar scaling, but omit it here for brevity. The problem size is controlled by the prediction horizon $H$ : increasing $H$ expands the optimization dimension, as every additional 10-step horizon introduces 70 new decision variables into the underlying arg min problem. For gradient computation, the MDFP layer adopts a Neumann-series approximation of the implicit Jacobian inverse, with the residual norm capped at $1 0 ^ { - 6 }$ to ensure stable and accurate differentiation while maintaining low computational overhead. ",
+        "bbox": [
+            112,
+            621,
+            882,
+            750
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "The results are summarized in Table 4 and visualized in Figure 6. Among all methods, MDFP is the most size-insensitive: its runtime increases by only about 0.69 s from the smallest to the largest horizon, remaining nearly constant across the range. By contrast, BPQP scales almost linearly with the increasing horizon, which is competitive at small instances but quickly overtaken as $H$ grows, whereas CvxpyLayer exhibits the steepest growth. Accordingly, MDFP’s advantage widens with scale. It is worth noting that at the largest horizon, MDFP is about 3.29 $\\times$ faster than BPQP and 21.83 $\\times$ faster than CvxpyLayer. These findings further corroborate our theoretical rationale. CvxpyLayer’s reliance on large KKT factorizations and conic reformulations leads to poor scaling. BPQP still incurs horizon-coupled linear-system solves whose iteration burden grows with size. Whereas our lightweight MDFP layer with a Neumann-series approximation avoids explicit matrix inversion and heavy factorization, yielding stable ",
+        "bbox": [
+            112,
+            751,
+            880,
+            894
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "page_number",
+        "text": "14 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "image",
+        "img_path": "images/0268f59660fc166e9ff8c2bf679fb1b44cf7966bdf1bdc7474f3e8a4587140cc.jpg",
+        "image_caption": [
+            "Figure 6: Table 4 visualization. "
+        ],
+        "image_footnote": [],
+        "bbox": [
+            132,
+            92,
+            867,
+            407
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "and efficient differentiation at scale. ",
+        "bbox": [
+            112,
+            470,
+            379,
+            483
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "6 Conclusion ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            506,
+            290,
+            524
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "In this work, we propose IPMO for multi-period portfolio optimization, integrating prediction and decision-making within a single differentiable model. By aligning return forecasts with portfolio objectives under transaction costs, the model learns economically consistent signals rather than optimizing a purely statistical loss. Empirical results on real ETF data demonstrate that the IPMO models consistently outperform their two-stage counterparts across different prediction models and planning horizons. With the RLinear model, IPMO regularizes portfolio dynamics, yielding steadier adjustments and lower transaction intensity. With the CNN-LSTM model, it captures meaningful shifts in portfolio composition, enabling timely responses to changing regimes without excessive turnover. Across both settings, the IPMO framework produces coherent allocation trajectories, leading to higher post-fee Sharpe ratios and improved drawdown control. Algorithmically, the proposed MDFP layer enables efficient and scalable training without explicit KKT factorizations, maintaining near-constant runtime as the horizon grows. This makes IPMO readily applicable to realistic multi-period decision environments. ",
+        "bbox": [
+            112,
+            536,
+            882,
+            705
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "However, there are still some limitations to this study. The current MDFP formulation is developed under simplex constraints, where the mirror-descent geometry ensures a well-defined fixed point. Nevertheless, the underlying idea is more general: any optimization problem whose solution satisfies a stable fixed-point relation can, in principle, be embedded within the same IPMO differentiation paradigm. Future work may formalize this generalization and extend it to richer constraint structures. In addition, the empirical analysis focuses on a moderate-sized asset universe to facilitate interpretable comparisons of portfolio dynamics. Scaling the framework to larger universes would provide a more rigorous test of its robustness and offer insight into how the learned temporal structure evolves in high-dimensional decision spaces. Advancing these directions would further consolidate IPMO optimization as a general methodology for multi-period financial decision-making. ",
+        "bbox": [
+            112,
+            706,
+            884,
+            850
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "page_number",
+        "text": "15 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "A Proof of Theorem 1 ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            80,
+            401,
+            97
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Proof. Recall that $\\mathbf { z } _ { t } ^ { * } = ( z _ { t + 1 } ^ { * } , \\ldots , z _ { t + H } ^ { * } )$ is the optimal solution of $\\mathrm { m i n } _ { { \\mathbf z } _ { t } \\in \\Omega } f ( { \\mathbf z } _ { t } , \\theta )$ . The KKT conditions yield, for each stage $s = t + 1 , \\ldots , t + H$ , the existence of multipliers $\\mu _ { s } \\in \\mathbb { R }$ and $\\boldsymbol { \\nu } _ { s } \\in \\mathbb { R } _ { \\ge 0 } ^ { N }$ such that ",
+        "bbox": [
+            112,
+            109,
+            880,
+            140
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\nabla_ {z _ {s}} f (\\mathbf {z} _ {t} ^ {*}, \\theta) + \\mu_ {s} \\mathbf {1} - \\nu_ {s} = 0,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            342,
+            151,
+            544,
+            164
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\nu_ {s, i} \\geq 0, \\quad i = 1, \\dots , N,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            484,
+            168,
+            655,
+            181
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\nu_ {s, i} z _ {s, i} ^ {*} = 0, \\quad i = 1, \\ldots , N,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            458,
+            187,
+            655,
+            200
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\mathbf {1} ^ {\\top} z _ {s} ^ {*} = 1, \\quad z _ {s} ^ {*} \\geq 0.\n$$",
+        "text_format": "latex",
+        "bbox": [
+            470,
+            205,
+            613,
+            219
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Let $B _ { s } = \\{ i : z _ { s , i } ^ { * } > 0 \\}$ be the active index set at stage $s$ . By complementary slackness, $\\nu _ { s , i } = 0$ for $i \\in \\boldsymbol { B } _ { s }$ , hence ",
+        "bbox": [
+            112,
+            229,
+            880,
+            256
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\nabla_ {z _ {s, i}} f \\left(\\mathbf {z} _ {t} ^ {*}, \\theta\\right) = - \\mu_ {s}, \\quad i \\in \\mathcal {B} _ {s},\n$$",
+        "text_format": "latex",
+        "bbox": [
+            381,
+            258,
+            616,
+            272
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "while $z _ { s , i } ^ { * } = 0$ and $\\nu _ { s , i } \\geq 0$ for $i \\notin B _ { s }$ ",
+        "bbox": [
+            112,
+            277,
+            389,
+            292
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Consider the stagewise Mirror Descent (MD) map: ",
+        "bbox": [
+            137,
+            292,
+            515,
+            306
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\Phi_ {s, i} (\\mathbf {z} _ {t}, \\theta) = \\frac {z _ {s , i} \\exp \\big (- \\eta \\nabla_ {z _ {s , i}} f (\\mathbf {z} _ {t} , \\theta) \\big)}{\\sum_ {j = 1} ^ {N} z _ {s , j} \\exp \\big (- \\eta \\nabla_ {z _ {s , j}} f (\\mathbf {z} _ {t} , \\theta) \\big)}, \\qquad \\eta > 0,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            289,
+            315,
+            707,
+            351
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "and $\\Phi ( \\mathbf { z } _ { t } , \\theta ) = ( \\Phi _ { t + 1 } ( \\mathbf { z } _ { t } , \\theta ) , \\ldots , \\Phi _ { t + H } ( \\mathbf { z } _ { t } , \\theta ) )$ . Evaluating at $\\mathbf { z } _ { t } ^ { \\ast }$ and distinguishing between $i \\in \\mathcal { B } _ { s }$ and $i \\notin B _ { s }$ : ",
+        "bbox": [
+            112,
+            359,
+            880,
+            387
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\text {n u m e r a t o r} = \\left\\{ \\begin{array}{l l} z _ {s, i} ^ {*} \\exp (\\eta \\mu_ {s}), & i \\in \\mathcal {B} _ {s} \\\\ 0, & i \\notin \\mathcal {B} _ {s} \\end{array} \\right.,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            357,
+            388,
+            638,
+            423
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\text {d e n o m i n a t o r} = \\sum_ {j \\in \\mathcal {B} _ {s}} z _ {s, j} ^ {*} \\exp (\\eta \\mu_ {s}) = \\exp (\\eta \\mu_ {s}) \\sum_ {j \\in \\mathcal {B} _ {s}} z _ {s, j} ^ {*} = \\exp (\\eta \\mu_ {s}).\n$$",
+        "text_format": "latex",
+        "bbox": [
+            257,
+            432,
+            739,
+            461
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Therefore, for all $i$ , ",
+        "bbox": [
+            114,
+            464,
+            258,
+            479
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\Phi_ {s, i} (\\mathbf {z} _ {t} ^ {*}, \\theta) = \\left\\{ \\begin{array}{l l} z _ {s, i} ^ {*} \\exp (\\eta \\mu_ {s}) / \\exp (\\eta \\mu_ {s}) = z _ {s, i} ^ {*}, & i \\in \\mathcal {B} _ {s} \\\\ 0, & i \\notin \\mathcal {B} _ {s} \\end{array} \\right.,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            299,
+            480,
+            697,
+            517
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "so $\\Phi _ { s } ( \\mathbf { z } _ { t } ^ { * } , \\theta ) = z _ { s } ^ { * }$ for each $s$ , and hence $\\Phi ( \\mathbf { z } _ { t } ^ { * } , \\theta ) = \\mathbf { z } _ { t } ^ { * }$ ",
+        "bbox": [
+            112,
+            521,
+            507,
+            538
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "B Proof of Proposition 1 ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            557,
+            430,
+            577
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Proof. Starting from the fixed-point relation $\\mathbf { z } _ { t } ^ { * } = \\Phi ( \\mathbf { z } _ { t } ^ { * } , \\theta )$ , take the total derivative with respect to $\\theta$ : ",
+        "bbox": [
+            112,
+            587,
+            865,
+            602
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} = \\partial_ {\\mathbf {z} _ {t} ^ {*}} \\Phi (\\mathbf {z} _ {t} ^ {*}, \\theta) \\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} + \\frac {\\partial \\Phi (\\mathbf {z} _ {t} ^ {*} , \\theta)}{\\partial \\theta}.\n$$",
+        "text_format": "latex",
+        "bbox": [
+            369,
+            609,
+            628,
+            638
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Rearranging terms yields ",
+        "bbox": [
+            112,
+            645,
+            302,
+            659
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\left(I - \\partial_ {\\mathbf {z} _ {t} ^ {*}} \\Phi (\\mathbf {z} _ {t} ^ {*}, \\theta)\\right) \\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} = \\frac {\\partial \\Phi (\\mathbf {z} _ {t} ^ {*} , \\theta)}{\\partial \\theta}.\n$$",
+        "text_format": "latex",
+        "bbox": [
+            373,
+            658,
+            625,
+            684
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Then, we obtain ",
+        "bbox": [
+            114,
+            689,
+            238,
+            702
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} = \\left(I - \\partial_ {\\mathbf {z} _ {t} ^ {*}} \\Phi (\\mathbf {z} _ {t} ^ {*}, \\theta)\\right) ^ {- 1} \\frac {\\partial \\Phi (\\mathbf {z} _ {t} ^ {*} , \\theta)}{\\partial \\theta},\n$$",
+        "text_format": "latex",
+        "bbox": [
+            364,
+            702,
+            635,
+            730
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "which is exactly (9). ",
+        "bbox": [
+            112,
+            733,
+            265,
+            747
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "C Proof of Theorem 2 ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            768,
+            401,
+            785
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Proof. First, we decompose the Jacobian ${ \\partial { \\bf z } _ { t } ^ { * } } / { \\partial \\theta }$ in (9). The mirror-descent fixed-point equation acts stagewise on $\\mathbf { z } _ { t } = ( z _ { t + 1 } , \\dots , z _ { t + H } )$ . In particular, we collect $\\Phi ( \\mathbf { z } _ { t } , \\theta ) = \\left( \\Phi _ { t + 1 } , \\ldots , \\Phi _ { t + H } \\right)$ , where each component $\\Phi _ { s }$ depends only on the corresponding Jacobian of the simplex variable ${ z } _ { s }$ and the parameter $\\theta$ . Hence, the Jacobian $\\partial _ { \\mathbf { z } _ { t } } \\Phi ( \\mathbf { z } _ { t } , \\theta )$ is block-diagonal with respect to the decomposition $\\mathbf z _ { t } = ( z _ { t + 1 } , \\dots , z _ { t + H } )$ . Consequently, the fixed-point Jacobian ",
+        "bbox": [
+            112,
+            797,
+            880,
+            869
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial \\mathbf {z} _ {t} ^ {*}}{\\partial \\theta} = \\left(I - \\partial_ {\\mathbf {z} _ {t} ^ {*}} \\Phi (\\mathbf {z} _ {t} ^ {*}, \\theta)\\right) ^ {- 1} \\frac {\\partial \\Phi (\\mathbf {z} _ {t} ^ {*} , \\theta)}{\\partial \\theta}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            364,
+            877,
+            633,
+            906
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "page_number",
+        "text": "16 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "decomposes componentwise across stages, so it is enough to establish the equivalence with the KKT-based sensitivity for a single simplex. The proof proceeds in two stages. First, we establish the equivalence between fixed-point-based and KKT-based sensitivities at an interior fixed point $\\mathbf { z } _ { t } ^ { \\ast }$ . We then extend the argument to general cases in which $\\mathbf { z } _ { t } ^ { \\ast }$ resides on the boundary. ",
+        "bbox": [
+            112,
+            84,
+            880,
+            140
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "We fixate the stage $s \\in \\{ t + 1 , \\ldots , t + H \\}$ . The multiplicative mirror-descent update is ",
+        "bbox": [
+            139,
+            141,
+            781,
+            155
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\Phi_ {s, i} (z _ {s}, \\theta) = \\frac {z _ {s , i} \\exp \\left(- \\eta [ \\nabla_ {z _ {s}} \\tilde {F} (\\mathbf {z} _ {t} , \\tilde {Y} _ {s}) ] _ {i}\\right)}{\\sum_ {j = 1} ^ {N} z _ {s , j} \\exp \\left(- \\eta [ \\nabla_ {z _ {s}} \\tilde {F} (\\mathbf {z} _ {t} , \\tilde {Y} _ {s}) ] _ {j}\\right)}, i = 1, \\ldots , N,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            272,
+            167,
+            727,
+            204
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "where $\\tilde { F }$ is defined in (4). For the ease in descriptions, we introduce the following shorthand notations: ",
+        "bbox": [
+            112,
+            215,
+            873,
+            231
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\nb \\left(z _ {s}, \\theta\\right) := \\nabla_ {z _ {s}} \\tilde {F} \\left(\\mathbf {z} _ {t}, \\hat {Y} _ {s}\\right),\n$$",
+        "text_format": "latex",
+        "bbox": [
+            357,
+            241,
+            532,
+            256
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\nQ (z _ {s}, \\theta) := \\nabla_ {z _ {s} z _ {s}} ^ {2} \\tilde {F} (\\mathbf {z} _ {t}, \\tilde {Y} _ {s}),\n$$",
+        "text_format": "latex",
+        "bbox": [
+            351,
+            261,
+            546,
+            277
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\na _ {i} \\left(z _ {s}, \\theta\\right) := - \\eta b _ {i} \\left(z _ {s}, \\theta\\right), \\quad i = 1, \\dots , N,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            351,
+            280,
+            650,
+            294
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\nD \\left(z _ {s}, \\theta\\right) := \\operatorname {d i a g} \\left(e ^ {a _ {1} \\left(z _ {s}, \\theta\\right)}, \\dots , e ^ {a _ {N} \\left(z _ {s}, \\theta\\right)}\\right),\n$$",
+        "text_format": "latex",
+        "bbox": [
+            351,
+            298,
+            643,
+            315
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\nr _ {i} \\left(z _ {s}, \\theta\\right) := z _ {s, i} e ^ {a _ {i} \\left(z _ {s}, \\theta\\right)}, \\quad i = 1, \\dots , N,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            351,
+            319,
+            648,
+            335
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\nM (z _ {s}, \\theta) := \\sum_ {j = 1} ^ {N} r _ {j} (z _ {s}, \\theta).\n$$",
+        "text_format": "latex",
+        "bbox": [
+            346,
+            340,
+            526,
+            378
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Then we can write ",
+        "bbox": [
+            114,
+            388,
+            255,
+            401
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\Phi_ {s, i} \\left(z _ {s}, \\theta\\right) = \\frac {r _ {i} \\left(z _ {s} , \\theta\\right)}{M \\left(z _ {s} , \\theta\\right)}, \\quad i = 1, \\dots , N. \\tag {12}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            351,
+            399,
+            880,
+            429
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "To begin with, we derive the Jacobian $\\partial _ { z _ { s } } \\Phi _ { s } ( z _ { s } , \\theta )$ at a general interior point. For $j = 1 , \\dots , N$ , the partial derivative of $a _ { i }$ with respect to $z _ { s , j }$ is $\\begin{array} { r } { \\frac { \\partial a _ { i } ( z _ { s } , \\theta ) } { \\partial z _ { s , j } } = - \\eta Q _ { i j } ( z _ { s } , \\theta ) } \\end{array}$ ∂zs,j , so by the product rule, ",
+        "bbox": [
+            112,
+            435,
+            880,
+            469
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\frac {\\partial r _ {i} (z _ {s} , \\theta)}{\\partial z _ {s , j}} = \\frac {\\partial}{\\partial z _ {s , j}} \\left(z _ {s, i} e ^ {a _ {i} (z _ {s}, \\theta)}\\right) \\\\ = e ^ {a _ {i} \\left(z _ {s}, \\theta\\right)} \\mathbf {1} _ {\\{i = j \\}} + z _ {s, i} e ^ {a _ {i} \\left(z _ {s}, \\theta\\right)} \\frac {\\partial a _ {i} \\left(z _ {s} , \\theta\\right)}{\\partial z _ {s , j}} \\tag {13} \\\\ = e ^ {a _ {i} (z _ {s}, \\theta)} {\\bf 1} _ {\\{i = j \\}} - \\eta z _ {s, i} e ^ {a _ {i} (z _ {s}, \\theta)} Q _ {i j} (z _ {s}, \\theta). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            310,
+            480,
+            880,
+            564
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "where $\\mathbf { 1 } _ { \\{ i = j \\} }$ denotes the indicator function. Let $\\boldsymbol { r } ( z _ { s } , \\theta ) = \\big ( r _ { 1 } ( z _ { s } , \\theta ) , \\dots , r _ { N } ( z _ { s } , \\theta ) \\big ) ^ { \\intercal }$ , so that $\\Phi _ { s } ( z _ { s } , \\theta ) =$ $\\frac { 1 } { M ( z _ { s } , \\theta ) } r ( z _ { s } , \\theta )$ and $M ( z _ { s } , \\theta ) = \\mathbf { 1 } ^ { \\prime } r ( z _ { s } , \\theta )$ . By (13), the Jacobian of $r ( z _ { s } , \\theta )$ with respect to $z _ { s }$ is ",
+        "bbox": [
+            114,
+            576,
+            880,
+            609
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {z _ {s}} r (z _ {s}, \\theta) = D (z _ {s}, \\theta) - \\eta \\operatorname {d i a g} (z _ {s}) D (z _ {s}, \\theta) Q (z _ {s}, \\theta). \\tag {14}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            315,
+            621,
+            880,
+            636
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Since $M ( z _ { s } , \\theta ) = \\mathbf { 1 } ^ { \\top } r ( z _ { s } , \\theta )$ , the gradient of $M$ is $\\partial _ { z _ { s } } M ( z _ { s } , \\theta ) = \\big ( \\partial _ { z _ { s } } r ( z _ { s } , \\theta ) \\big ) ^ { \\top } { \\bf 1 }$ . For (12), by the quotient rule, ",
+        "bbox": [
+            112,
+            648,
+            880,
+            678
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {z _ {s}} \\Phi_ {s} (z _ {s}, \\theta) = \\frac {1}{M (z _ {s} , \\theta)} \\partial_ {z _ {s}} r (z _ {s}, \\theta) - \\frac {1}{M (z _ {s} , \\theta) ^ {2}} r (z _ {s}, \\theta) \\big (\\partial_ {z _ {s}} M (z _ {s}, \\theta) \\big) ^ {\\top}.\n$$",
+        "text_format": "latex",
+        "bbox": [
+            243,
+            689,
+            752,
+            719
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Using $r ( z _ { s } , \\theta ) = M ( z _ { s } , \\theta ) \\Phi _ { s } ( z _ { s } , \\theta )$ and $\\partial _ { z _ { s } } M ( z _ { s } , \\theta ) = \\big ( \\partial _ { z _ { s } } r ( z _ { s } , \\theta ) \\big ) ^ { \\top } { \\bf 1 }$ , we obtain ",
+        "bbox": [
+            112,
+            730,
+            702,
+            747
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {z _ {s}} \\Phi_ {s} (z _ {s}, \\theta) = \\frac {1}{M (z _ {s} , \\theta)} \\Bigl (I - \\Phi_ {s} (z _ {s}, \\theta) {\\bf 1} ^ {\\top} \\Bigr) \\partial_ {z _ {s}} r (z _ {s}, \\theta).\n$$",
+        "text_format": "latex",
+        "bbox": [
+            305,
+            759,
+            692,
+            788
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Substituting $\\partial _ { z _ { s } } r ( z _ { s } , \\theta )$ with (14), we finally obtain ",
+        "bbox": [
+            112,
+            797,
+            495,
+            812
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\partial_ {z _ {s}} \\Phi_ {s} \\left(z _ {s}, \\theta\\right) = \\frac {1}{M \\left(z _ {s} , \\theta\\right)} \\left(I - \\Phi_ {s} \\left(z _ {s}, \\theta\\right) \\mathbf {1} ^ {\\top}\\right) \\tag {15} \\\\ \\Big (D (z _ {s}, \\theta) - \\eta \\operatorname {d i a g} (z _ {s}) D (z _ {s}, \\theta) Q (z _ {s}, \\theta) \\Big). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            302,
+            824,
+            880,
+            883
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "page_number",
+        "text": "17 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Next, we can now compute the Jacobian at an interior fixed point. Let $P _ { s } \\triangleq I - z _ { s } ^ { \\ast } \\mathbf { 1 } ^ { \\intercal }$ . By the KKT condition at an interior optimal solution $z _ { s } ^ { * }$ , we have $b _ { i } ( z _ { s } ^ { * } , \\theta ) = \\mu _ { s } , i = 1 , \\dots , N$ . Then ",
+        "bbox": [
+            112,
+            84,
+            880,
+            112
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\nD \\left(z _ {s} ^ {*}, \\theta\\right) = e ^ {- \\eta \\mu_ {s}} I =: \\alpha_ {s} I, \\tag {16a}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            337,
+            124,
+            880,
+            139
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\nM \\left(z _ {s} ^ {*}, \\theta\\right) = \\sum_ {i = 1} ^ {N} z _ {s, i} ^ {*} e ^ {a _ {i} \\left(z _ {s} ^ {*}, \\theta\\right)} = \\alpha_ {s} \\sum_ {i = 1} ^ {N} z _ {s, i} ^ {*} = \\alpha_ {s}. \\tag {16b}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            332,
+            143,
+            880,
+            181
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Plugging (16a) and (16b) into (15), we obtain ",
+        "bbox": [
+            112,
+            191,
+            455,
+            206
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\partial_ {z _ {s}} \\Phi_ {s} (z _ {s} ^ {*}, \\theta) = \\frac {1}{\\alpha_ {s}} P _ {s} \\left(\\alpha_ {s} I - \\eta \\alpha_ {s} \\operatorname {d i a g} (z _ {s} ^ {*}) Q (z _ {s} ^ {*}, \\theta)\\right) \\\\ = P _ {s} \\left(I - \\eta \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right)\\right), \\tag {17} \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            315,
+            217,
+            880,
+            271
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Next, we compute the partial derivative $\\partial _ { \\theta } \\Phi _ { s } ( z _ { s } ^ { * } , \\theta )$ . Let $K ( z _ { s } , \\theta ) = \\partial _ { \\theta } b ( z _ { s } , \\theta )$ . Then $\\partial _ { \\theta } a ( z _ { s } , \\theta ) =$ $- \\eta K ( z _ { s } , \\theta )$ . For each $i = 1 , \\ldots , N$ , the derivative of $r _ { i } ( z _ { s } , \\theta ) = z _ { s , i } e ^ { a _ { i } ( z _ { s } , \\theta ) }$ with respect to $\\theta$ is ",
+        "bbox": [
+            112,
+            279,
+            880,
+            309
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {\\theta} r _ {i} \\left(z _ {s}, \\theta\\right) = z _ {s, i} e ^ {a _ {i} \\left(z _ {s}, \\theta\\right)} \\partial_ {\\theta} a _ {i} \\left(z _ {s}, \\theta\\right),\n$$",
+        "text_format": "latex",
+        "bbox": [
+            369,
+            321,
+            626,
+            336
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "In vector form, ",
+        "bbox": [
+            112,
+            347,
+            228,
+            361
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\partial_ {\\theta} r \\left(z _ {s}, \\theta\\right) = \\operatorname {d i a g} \\left(z _ {s}\\right) D \\left(z _ {s}, \\theta\\right) \\partial_ {\\theta} a \\left(z _ {s}, \\theta\\right) \\tag {18} \\\\ = - \\eta \\operatorname {d i a g} \\left(z _ {s}\\right) D \\left(z _ {s}, \\theta\\right) K \\left(z _ {s}, \\theta\\right). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            349,
+            362,
+            880,
+            398
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Since $M ( z _ { s } , \\theta ) = \\mathbf { 1 } ^ { \\top } r ( z _ { s } , \\theta )$ , we have $\\partial _ { \\theta } M ( z _ { s } , \\theta ) = \\mathbf { 1 } ^ { \\top } \\partial _ { \\theta } r ( z _ { s } , \\theta )$ . For (12), by the quotient rule, ",
+        "bbox": [
+            112,
+            404,
+            813,
+            420
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\partial_ {\\theta} \\Phi_ {s} (z _ {s}, \\theta) = \\frac {1}{M (z _ {s} , \\theta)} \\partial_ {\\theta} r (z _ {s}, \\theta) - \\frac {1}{M (z _ {s} , \\theta) ^ {2}} r (z _ {s}, \\theta) \\left(\\partial_ {\\theta} M (z _ {s}, \\theta)\\right) \\\\ = \\frac {1}{M \\left(z _ {s} , \\theta\\right)} \\left(I - \\Phi_ {s} \\left(z _ {s}, \\theta\\right) \\mathbf {1} ^ {\\top}\\right) \\partial_ {\\theta} r \\left(z _ {s}, \\theta\\right). \\tag {19} \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            260,
+            431,
+            880,
+            491
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Finally, because $r ( z _ { s } , \\theta ) = M ( z _ { s } , \\theta ) \\Phi _ { s } ( z _ { s } , \\theta )$ , we obtain ",
+        "bbox": [
+            112,
+            500,
+            522,
+            516
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\operatorname {d i a g} \\left(z _ {s}\\right) D \\left(z _ {s}, \\theta\\right) = \\operatorname {d i a g} \\left(r \\left(z _ {s}, \\theta\\right)\\right) \\tag {20} \\\\ = M \\left(z _ {s}, \\theta\\right) \\operatorname {d i a g} \\left(\\Phi_ {s} \\left(z _ {s}, \\theta\\right)\\right). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            337,
+            527,
+            880,
+            565
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Plugging (18) and (20) into (19), we obtain ",
+        "bbox": [
+            112,
+            576,
+            436,
+            590
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {\\theta} \\Phi_ {s} \\left(z _ {s}, \\theta\\right) = - \\eta \\left(I - \\Phi_ {s} \\left(z _ {s}, \\theta\\right) \\mathbf {1} ^ {\\top}\\right) \\operatorname {d i a g} \\left(\\Phi_ {s} \\left(z _ {s}, \\theta\\right)\\right) K \\left(z _ {s}, \\theta\\right). \\tag {21}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            282,
+            602,
+            880,
+            618
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Evaluating (21) at the interior fixed point $\\Phi _ { s } ( z _ { s } ^ { * } , \\theta ) = z _ { s } ^ { * }$ yields ",
+        "bbox": [
+            112,
+            627,
+            583,
+            644
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {\\theta} \\Phi_ {s} \\left(z _ {s} ^ {*}, \\theta\\right) = - \\eta \\left(I - z _ {s} ^ {*} \\mathbf {1} ^ {\\top}\\right) \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) K \\left(z _ {s} ^ {*}, \\theta\\right). \\tag {22}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            331,
+            653,
+            880,
+            669
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Equivalence between fixed-point-based and KKT-based sensitivities at an interior fixed point Differentiating the fixed-point relation $z _ { s } ^ { * } = \\Phi _ { s } ( z _ { s } ^ { * } , \\theta )$ with respect to $\\theta$ , we obtain ",
+        "bbox": [
+            112,
+            684,
+            880,
+            713
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\left(I - \\partial_ {z _ {s}} \\Phi_ {s} \\left(z _ {s} ^ {*}, \\theta\\right)\\right) \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} = \\partial_ {\\theta} \\Phi_ {s} \\left(z _ {s} ^ {*}, \\theta\\right). \\tag {23}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            364,
+            724,
+            880,
+            750
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Plugging (17) and (22) into (23), this becomes ",
+        "bbox": [
+            112,
+            760,
+            460,
+            775
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\left(I - P _ {s} \\left(I - \\eta \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right)\\right)\\right) \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} \\tag {24} \\\\ = - \\eta P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) K \\left(z _ {s} ^ {*}, \\theta\\right). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            364,
+            785,
+            880,
+            829
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Rearranging (24), we have ",
+        "bbox": [
+            112,
+            841,
+            312,
+            854
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\left(z _ {s} ^ {*} \\mathbf {1} ^ {\\top} + \\eta P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right)\\right) \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} \\tag {25} \\\\ = - \\eta P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) K \\left(z _ {s} ^ {*}, \\theta\\right). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            374,
+            854,
+            880,
+            904
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "page_number",
+        "text": "18 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Note that since $z _ { s } ^ { * }$ lies in the simplex, we have $\\mathbf { 1 } ^ { \\top } z _ { s } ^ { * } = 1$ , hence $\\begin{array} { r } { \\mathbf { 1 } ^ { \\top } \\frac { \\partial z _ { s } ^ { * } } { \\partial \\theta } = 0 } \\end{array}$ . Plugging this result into (25) and cancelling the common factor $\\eta > 0$ , we are left with ",
+        "bbox": [
+            112,
+            83,
+            880,
+            112
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\nP _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) \\left(Q \\left(z _ {s} ^ {*}, \\theta\\right) \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} + K \\left(z _ {s} ^ {*}, \\theta\\right)\\right) = 0. \\tag {26}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            346,
+            124,
+            880,
+            152
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Thus the vector $\\begin{array} { r } { \\mathrm { d i a g } ( z _ { s } ^ { * } ) \\Big ( Q ( z _ { s } ^ { * } , \\theta ) \\frac { \\partial z _ { s } ^ { * } } { \\partial \\theta } + K ( z _ { s } ^ { * } , \\theta ) \\Big ) } \\end{array}$ belongs to the kernel of $P _ { s }$ , which equals span $\\{ z _ { s } ^ { * } \\}$ since $\\mathbf { 1 } ^ { \\top } z _ { s } ^ { * } = 1$ . Hence, there exists a vector $\\xi _ { s }$ such that ",
+        "bbox": [
+            112,
+            162,
+            880,
+            200
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) \\left(Q \\left(z _ {s} ^ {*}, \\theta\\right) \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} + K \\left(z _ {s} ^ {*}, \\theta\\right)\\right) = z _ {s} ^ {*} \\xi_ {s} ^ {\\mathrm {T}}. \\tag {27}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            342,
+            210,
+            880,
+            237
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Since $z _ { s , i } ^ { * } > 0$ for all $i$ in the interior case, $\\mathrm { d i a g } ( z _ { s } ^ { * } )$ is invertible, and (27) is equivalent to ",
+        "bbox": [
+            112,
+            246,
+            771,
+            263
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\nQ \\left(z _ {s} ^ {*}, \\theta\\right) \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} + K \\left(z _ {s} ^ {*}, \\theta\\right) = \\mathbf {1} \\xi_ {s} ^ {\\top}, \\quad \\mathbf {1} ^ {\\top} \\frac {\\partial z _ {s} ^ {*}}{\\partial \\theta} = 0. \\tag {28}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            324,
+            274,
+            880,
+            300
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Equation (28) precisely corresponds to the system of linear equations derived by differentiating the KKT conditions for the subproblem at stage $s$ . ",
+        "bbox": [
+            112,
+            311,
+            880,
+            338
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Equivalence at boundary points under strict complementarity Let $B _ { s } : = \\{ i : z _ { s , i } ^ { * } > 0 \\}$ and $\\mathcal { A } _ { s } : = \\{ i : z _ { s , i } ^ { * } = 0 \\}$ denote the free and active index sets respectively. Strict complementarity implies that the active set is locally constant in $\\theta$ , so ∂z∗s,i $\\begin{array} { r } { \\frac { \\partial z _ { s , i } ^ { * } } { \\partial \\theta } = 0 } \\end{array}$ ∂θ for $i \\in \\mathcal { A } _ { s }$ . Moreover, $\\Phi _ { s , i } ( z _ { s } , \\theta ) = 0$ whenever $z _ { s , i } = 0$ . And for $j \\neq i$ we have ",
+        "bbox": [
+            112,
+            355,
+            880,
+            418
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial \\Phi_ {s , i}}{\\partial z _ {s , j}} (z _ {s}, \\theta) = \\frac {\\partial}{\\partial z _ {s , j}} \\Big (z _ {s, i} \\frac {e ^ {a _ {i} (z _ {s} , \\theta)}}{M (z _ {s} , \\theta)} \\Big) = z _ {s, i} \\frac {\\partial}{\\partial z _ {s , j}} \\Big (\\frac {e ^ {a _ {i} (z _ {s} , \\theta)}}{M (z _ {s} , \\theta)} \\Big) = 0,\n$$",
+        "text_format": "latex",
+        "bbox": [
+            265,
+            430,
+            734,
+            462
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Thus the active set can be separated and the dynamics of $\\Phi _ { s }$ are reduced to the free coordinates. After a suitable permutation of indices, we may write $\\boldsymbol { z } _ { s } = ( z _ { s , B } , z _ { s , A } )$ , and the Jacobian of $\\Phi _ { s }$ at $z _ { s } ^ { * }$ has a block upper-triangular structure ",
+        "bbox": [
+            112,
+            470,
+            880,
+            514
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {z _ {s}} \\Phi_ {s} (z _ {s} ^ {*}, \\theta) = \\left( \\begin{array}{c c} \\partial_ {z _ {s, \\mathcal {B}}} \\Phi_ {s, \\mathcal {B}} (z _ {s} ^ {*}, \\theta) & \\partial_ {z _ {s, \\mathcal {A}}} \\Phi_ {s, \\mathcal {B}} (z _ {s} ^ {*}, \\theta) \\\\ 0 & \\partial_ {z _ {s, \\mathcal {A}}} \\Phi_ {s, \\mathcal {A}} (z _ {s} ^ {*}, \\theta) \\end{array} \\right),\n$$",
+        "text_format": "latex",
+        "bbox": [
+            307,
+            524,
+            690,
+            555
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {\\theta} \\Phi_ {s} (z _ {s} ^ {*}, \\theta) = \\left( \\begin{array}{c} \\partial_ {\\theta} \\Phi_ {s, \\mathcal {B}} (z _ {s} ^ {*}, \\theta) \\\\ 0 \\end{array} \\right).\n$$",
+        "text_format": "latex",
+        "bbox": [
+            312,
+            558,
+            541,
+            588
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Note that $\\partial _ { z _ { s , B } } \\Phi _ { s , A } ( z _ { s } ^ { * } , \\theta ) = 0$ ",
+        "bbox": [
+            112,
+            598,
+            344,
+            613
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "The equation (23) then decouples into ",
+        "bbox": [
+            139,
+            613,
+            423,
+            627
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial z _ {s , \\mathcal {A}} ^ {*}}{\\partial \\theta} = 0, (I - \\partial_ {z _ {s, \\mathcal {B}}} \\Phi_ {s, \\mathcal {B}} \\left(z _ {s} ^ {*}, \\theta\\right)) \\frac {\\partial z _ {s , \\mathcal {B}} ^ {*}}{\\partial \\theta} = \\partial_ {\\theta} \\Phi_ {s, \\mathcal {B}} \\left(z _ {s} ^ {*}, \\theta\\right). \\tag {29}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            299,
+            638,
+            880,
+            667
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "The second equation is exactly the interior fixed-point relation posed on the lower-dimensional simplex $\\left\\{ z _ { s , B } \\in \\mathbb { R } ^ { | \\mathcal { B } _ { s } | } : z _ { s , B } \\ge 0 \\right.$ , $\\mathbf { 1 } ^ { \\top } z _ { s , B } = 1 \\big \\}$ . Repeating the interior argument on (29), we obtain ",
+        "bbox": [
+            114,
+            676,
+            880,
+            706
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "equation",
+        "text": "$$\nQ _ {\\mathcal {B} \\mathcal {B}} \\left(z _ {s} ^ {*}, \\theta\\right) \\frac {\\partial z _ {s , \\mathcal {B}} ^ {*}}{\\partial \\theta} + K _ {\\mathcal {B}} \\left(z _ {s} ^ {*}, \\theta\\right) = \\mathbf {1} \\xi_ {s} ^ {\\top}, \\quad \\mathbf {1} ^ {\\top} \\frac {\\partial z _ {s , \\mathcal {B}} ^ {*}}{\\partial \\theta} = 0, \\tag {30}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            299,
+            717,
+            880,
+            745
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "where $Q _ { B B }$ and $K _ { B }$ denote the restriction of $Q$ and $K$ to the free index set $B _ { s }$ . This is precisely the sensitivity obtained by differentiating the KKT system of the reduced subproblem at stage $s$ on the active set. Thus, under strict complementarity, the Jacobian $\\frac { \\partial z _ { s } ^ { * } } { \\partial { \\theta } }$ computed from the fixed-point equation again coincides with the KKT-based sensitivity. ",
+        "bbox": [
+            112,
+            753,
+            880,
+            812
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Together with the interior case, we have shown that for the simplex subproblem at stage $s$ , the Jacobian ∂z∗s $\\frac { \\partial z _ { s } ^ { * } } { \\partial { \\theta } }$ computed from the fixed-point equation is identical to the KKT-based sensitivity. Combined with the stagewise block-diagonal structure discussed at the beginning of this proof, this establishes the desired equivalence for the full multi-stage problem. ",
+        "bbox": [
+            112,
+            812,
+            880,
+            871
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "image",
+        "img_path": "images/0989225a3f0987118dd57bff09c10932e720d6b92cb44e0df9a357221f51b32b.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            865,
+            872,
+            880,
+            883
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "page_number",
+        "text": "19 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            934
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "D Proof of Proposition 2 ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            80,
+            433,
+            99
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Proof. At a particular stage $s \\in \\{ t + 1 , \\ldots , t + H \\}$ , we first consider the case where the optimal solution $z _ { s } ^ { * }$ lies in the interior of the simplex. In this case, the Jacobian $\\partial _ { z _ { s } } \\Phi _ { s } ( z _ { s } ^ { * } , \\theta )$ is given by (17). Let $J _ { s } = \\partial _ { z _ { s } } \\Phi _ { s } ( z _ { s } ^ { * } , \\theta )$ . Then, using the notation $P _ { s } = I - z _ { s } ^ { * } \\mathbf { 1 } ^ { \\top }$ introduced earlier, the Jacobian is given by ",
+        "bbox": [
+            112,
+            110,
+            880,
+            154
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\nJ _ {s} = P _ {s} \\left(I - \\eta \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right)\\right). \\tag {31}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            379,
+            164,
+            880,
+            179
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Note that $\\mathbf { 1 } ^ { \\top } P _ { s } = \\mathbf { 1 } ^ { \\top } ( I - z _ { s } ^ { * } \\mathbf { 1 } ^ { \\top } ) = \\mathbf { 1 } ^ { \\top } - ( \\mathbf { 1 } ^ { \\top } z _ { s } ^ { * } ) \\mathbf { 1 } ^ { \\top } = 0$ since $\\mathbf { 1 } ^ { \\top } z _ { s } ^ { * } = 1$ . Consequently, the column space of $J _ { s }$ lies in the tangent space of the simplex, defined as $\\Lambda = \\{ w \\in \\mathbb { R } ^ { N } \\mid \\mathbf { 1 } ^ { \\top } w = 0 \\}$ . Let $( \\lambda , v )$ be an eigenvalue-eigenvector pair of $J _ { s }$ with $v \\neq 0$ . We want to show $| \\lambda | < 1$ . If $v \\not \\in \\Lambda$ , then $0 = \\mathbf { 1 } ^ { \\top } J _ { s } v = \\lambda \\mathbf { 1 } ^ { \\top } v$ . Since $\\mathbf { 1 } ^ { \\mid } v \\neq 0$ , we obtain $\\lambda = 0$ . It remains to consider the case when $v \\in \\Lambda$ . The eigenvalue equation is ",
+        "bbox": [
+            112,
+            187,
+            880,
+            246
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\nP _ {s} \\left(I - \\eta \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right)\\right) v = \\lambda v. \\tag {32}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            374,
+            256,
+            880,
+            272
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Note that $P _ { s } v = ( I - z _ { s } ^ { * } \\mathbf { 1 } ^ { \\top } ) v = v - z _ { s } ^ { * } \\mathbf { 1 } ^ { \\top } v = v$ since $\\mathbf { 1 } ^ { \\top } v = 0$ . Plugging this result into (32), we obtain ",
+        "bbox": [
+            112,
+            280,
+            873,
+            296
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\eta P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right) v = (1 - \\lambda) v \\tag {33}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            378,
+            306,
+            880,
+            322
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Left-multiplying (33) by $v ^ { \\top } \\mathrm { d i a g } ( z _ { s } ^ { * } ) ^ { - 1 }$ , this becomes ",
+        "bbox": [
+            112,
+            330,
+            509,
+            346
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\eta v ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right) v = (1 - \\lambda) v ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} v. \\tag {34}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            275,
+            355,
+            880,
+            372
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Since $\\mathrm { d i a g } ( z _ { s } ^ { * } ) ^ { - 1 } z _ { s } ^ { * } = { \\bf 1 }$ , we have ",
+        "bbox": [
+            112,
+            380,
+            357,
+            395
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) = \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} \\left(I - z _ {s} ^ {*} \\mathbf {1} ^ {\\top}\\right) \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) \\\\ = I - \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} z _ {s} ^ {*} \\mathbf {1} ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) \\\\ = I - \\mathbf {1 1} ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right). \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            297,
+            406,
+            700,
+            470
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Plugging this result into (34), we obtain ",
+        "bbox": [
+            114,
+            480,
+            413,
+            494
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} v ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} P _ {s} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right) v \\\\ = v ^ {\\top} \\left(I - \\mathbf {1 1} ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right)\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right) v \\\\ = v ^ {\\top} Q \\left(z _ {s} ^ {*}, \\theta\\right) v - \\left(v ^ {\\top} \\mathbf {1}\\right) \\left(\\mathbf {1} ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) Q \\left(z _ {s} ^ {*}, \\theta\\right) v\\right) \\\\ = v ^ {\\top} Q \\left(z _ {s} ^ {*}, \\theta\\right) v. \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            332,
+            505,
+            665,
+            589
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Combining this result with (34), we obtain ",
+        "bbox": [
+            114,
+            599,
+            431,
+            613
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\eta v ^ {\\top} Q \\left(z _ {s} ^ {*}, \\theta\\right) v = (1 - \\lambda) v ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} v. \\tag {35}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            352,
+            623,
+            880,
+            640
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Solving for $\\lambda$ yields ",
+        "bbox": [
+            112,
+            649,
+            260,
+            663
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\lambda = 1 - \\eta \\tau_ {s}, \\quad \\text {w h e r e} \\quad \\tau_ {s} = \\frac {v ^ {\\top} Q \\left(z _ {s} ^ {*} , \\theta\\right) v}{v ^ {\\top} \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1} v}. \\tag {36}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            337,
+            662,
+            880,
+            694
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Since both $Q ( z _ { s } ^ { * } , \\theta )$ and $\\mathrm { d i a g } ( z _ { s } ^ { * } ) ^ { - 1 }$ are positive definite, it follows that $\\tau _ { s } > 0$ and thus $\\lambda < 1$ . To ensure that $\\lambda > - 1$ , we further analyze the bound on $\\tau _ { s }$ : ",
+        "bbox": [
+            112,
+            697,
+            880,
+            728
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\tau_ {s} = \\frac {v ^ {\\top} Q (z _ {s} ^ {*} , \\theta) v}{v ^ {\\top} \\operatorname {d i a g} (z _ {s} ^ {*}) ^ {- 1} v} \\\\ \\leq \\frac {\\lambda_ {\\max } \\left(Q \\left(z _ {s} ^ {*} , \\theta\\right)\\right) \\| v \\| _ {2} ^ {2}}{\\lambda_ {\\min } \\left(\\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) ^ {- 1}\\right) \\| v \\| _ {2} ^ {2}} \\tag {37} \\\\ = \\| Q \\left(z _ {s} ^ {*}, \\theta\\right) \\| _ {2} \\| \\operatorname {d i a g} \\left(z _ {s} ^ {*}\\right) \\| _ {2} \\triangleq \\bar {\\tau} _ {s}. \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            374,
+            737,
+            880,
+            834
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Therefore, to ensure $\\lambda > - 1$ , it suffices to set $\\begin{array} { r } { 0 < \\eta < \\frac { 2 } { \\bar { \\tau } _ { s } } } \\end{array}$ , which guarantees $\\rho ( J _ { s } ) < 1$ ",
+        "bbox": [
+            112,
+            844,
+            749,
+            859
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "sExtending this condition to the multi-stage setting, we require $\\begin{array} { r } { 0 < \\eta < \\operatorname* { m i n } _ { s \\in \\{ t + 1 , \\dots , t + H \\} } 2 / \\bar { \\tau } _ { s } } \\end{array}$ , so that $\\rho ( J _ { s } ) ~ < ~ 1$ for all $s$ in the horizon. Since the full Jacobian $J$ is block diagonal, we then have $\\rho ( J ) = \\operatorname* { m a x } _ { s } \\rho ( J _ { s } ) < 1$ . ",
+        "bbox": [
+            112,
+            859,
+            880,
+            902
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "page_number",
+        "text": "20 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            934
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Next, we consider the case where the optimal solution $z _ { s } ^ { * }$ lies on the boundary. We have proved in C that the Jacobian of $\\Phi _ { s }$ at $z _ { s } ^ { * }$ has a block upper-triangular structure ",
+        "bbox": [
+            112,
+            84,
+            880,
+            112
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\partial_ {z _ {s}} \\Phi_ {s} (z _ {s} ^ {*}, \\theta) = \\left( \\begin{array}{c c} J _ {s, \\mathcal {B B}} & J _ {s, \\mathcal {B A}} \\\\ 0 & J _ {s, \\mathcal {A A}} \\end{array} \\right).\n$$",
+        "text_format": "latex",
+        "bbox": [
+            376,
+            122,
+            618,
+            155
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Hence the eigenvalues of $\\partial _ { z _ { s } } \\Phi _ { s } ( z _ { s } ^ { * } , \\theta )$ are exactly the union of the eigenvalues of the two diagonal blocks $J _ { s , B B }$ and $J _ { s , \\mathcal { A } \\mathcal { A } }$ . The upper-left block $J _ { s , B B }$ coincides with the interior Jacobian in (17), whose eigenvalues can be made strictly less than one by selecting $\\eta < \\frac { 2 } { \\bar { \\tau } _ { s } }$ . It therefore remains to bound the eigenvalues of the lower-right block $J _ { s , \\mathcal { A } \\mathcal { A } }$ corresponding to the active coordinates. Since each active coordinate satisfies $\\partial \\Phi _ { s , i } / \\partial z _ { s , j } ( z _ { s } ^ { * } , \\theta ) = 0$ for all $j \\neq i$ , $J _ { s , \\mathcal { A } \\mathcal { A } }$ is a diagonal matrix and we only need to consider the self-derivatives $\\partial \\Phi _ { s , i } / \\partial z _ { s , i }$ for $i \\in \\mathcal { A } _ { s }$ . We continue to use the shorthand notations in (17). At the fixed point $z _ { s } ^ { * }$ , strict complementarity implies that there exists a scalar $\\mu _ { s }$ such that $b _ { i } ( z _ { s } ^ { * } , \\theta ) = \\mu _ { s }$ for $i \\in { \\cal B } _ { s }$ and $b _ { i } ( z _ { s } ^ { * } , \\theta ) > \\mu _ { s }$ for $i \\in \\mathcal { A } _ { s }$ . Then we have $a _ { i } ( z _ { s } ^ { * } , \\theta ) = - \\eta \\mu _ { s }$ and $r _ { i } ( z _ { s } ^ { * } , \\theta ) = z _ { s , i } ^ { * } e ^ { - \\eta \\mu _ { s } }$ for $i \\in \\boldsymbol { B } _ { s }$ so that ",
+        "bbox": [
+            112,
+            162,
+            882,
+            280
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "equation",
+        "text": "$$\nM (z _ {s} ^ {*}, \\theta) = \\sum_ {i = 1} ^ {N} r _ {i} (z _ {s} ^ {*}, \\theta) = e ^ {- \\eta \\mu_ {s}} \\sum_ {i \\in \\mathcal {B} _ {s}} z _ {s, i} ^ {*} = e ^ {- \\eta \\mu_ {s}}.\n$$",
+        "text_format": "latex",
+        "bbox": [
+            315,
+            290,
+            678,
+            330
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "For an active coordinate $i \\in \\mathcal { A } _ { s }$ we have $z _ { s , i } ^ { * } = 0$ and $r _ { i } ( z _ { s } ^ { * } , \\theta ) = 0$ , so (13) becomes ",
+        "bbox": [
+            112,
+            338,
+            727,
+            356
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\frac {\\partial r _ {i}}{\\partial z _ {s , j}} (z _ {s} ^ {*}, \\theta) = \\mathbf {1} _ {\\{i = j \\}} e ^ {a _ {i} (z _ {s} ^ {*}, \\theta)}.\n$$",
+        "text_format": "latex",
+        "bbox": [
+            389,
+            366,
+            606,
+            397
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Differentiating (12), we have ",
+        "bbox": [
+            114,
+            406,
+            329,
+            420
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "equation",
+        "text": "$$\n\\begin{array}{l} \\frac {\\partial \\Phi_ {s , i}}{\\partial z _ {s , i}} (z _ {s} ^ {*}, \\theta) = \\frac {1}{M (z _ {s} ^ {*} , \\theta)} \\frac {\\partial r _ {i}}{\\partial z _ {s , i}} (z _ {s} ^ {*}, \\theta) \\\\ = \\frac {e ^ {a _ {i} \\left(z _ {s} ^ {*} , \\theta\\right)}}{M \\left(z _ {s} ^ {*} , \\theta\\right)} \\\\ = e ^ {- \\eta \\left(b _ {i} \\left(z _ {s} ^ {*}, \\theta\\right) - \\mu_ {s}\\right)}. \\\\ \\end{array}\n$$",
+        "text_format": "latex",
+        "bbox": [
+            366,
+            419,
+            628,
+            514
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Since $J _ { s , \\mathcal { A } \\mathcal { A } }$ is a diagonal matrix and $b _ { i } ( z _ { s } ^ { * } , \\theta ) ~ > ~ \\mu _ { s }$ for $i \\in \\mathcal A _ { s }$ , the corresponding eigenvalues are $e ^ { - \\eta \\left( b _ { i } ( z _ { s } ^ { \\ast } , \\theta ) - \\mu _ { s } \\right) } \\in \\left( 0 , 1 \\right)$ . These eigenvalues are automatically strictly inside the unit disk for any $\\eta > 0$ Together with the conclusion drawn at the interior points, we finish the proof. ",
+        "bbox": [
+            112,
+            523,
+            880,
+            571
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "image",
+        "img_path": "images/eb6d535fa83bd4dc6648d0538d9addfa3bbad7e81f2f524c95bb5d13dfd355ae.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "bbox": [
+            863,
+            573,
+            880,
+            583
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "References ",
+        "text_level": 1,
+        "bbox": [
+            115,
+            607,
+            245,
+            624
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "[1] Akshay Agrawal, Brandon Amos, Shane Barratt, Stephen Boyd, Steven Diamond, and J Zico Kolter. Differentiable convex optimization layers. Advances in neural information processing systems, 32, 2019. ",
+            "[2] Brandon Amos and J. Zico Kolter. OptNet: Differentiable optimization as a layer in neural networks. In Doina Precup and Yee Whye Teh, editors, Proceedings of the 34th International Conference on Machine Learning, volume 70 of Proceedings of Machine Learning Research, pages 136–145. PMLR, 06–11 Aug 2017. URL https://proceedings.mlr.press/v70/amos17a.html. ",
+            "[3] Hassan T. Anis and Roy H. Kwon. End-to-end, decision-based, cardinality-constrained portfolio optimization. European Journal of Operational Research, 320(3):739–753, 2025. ISSN 0377-2217. doi: https://doi.org/10.1016/j.ejor.2024.08.030. URL https://www.sciencedirect.com/science/ article/pii/S0377221724006866. ",
+            "[4] Suleyman Basak and Georgy Chabakauri. Dynamic mean-variance asset allocation. The Review of Financial Studies, 23(8):2970–3016, 2010. ",
+            "[5] Dimitris Bertsimas and Ryan Cory-Wright. A scalable algorithm for sparse portfolio selection. INFORMS Journal on Computing, 34(3):1489–1511, 2022. doi: 10.1287/ijoc.2021.1127. URL https: //doi.org/10.1287/ijoc.2021.1127. "
+        ],
+        "bbox": [
+            122,
+            636,
+            882,
+            902
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "page_number",
+        "text": "",
+        "bbox": [
+            489,
+            923,
+            505,
+            934
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "[6] Michael J Best and Robert R Grauer. On the sensitivity of mean-variance-efficient portfolios to changes in asset means: some analytical and computational results. The review of financial studies, 4(2):315–342, 1991. ",
+            "[7] Fischer Black and Robert Litterman. Global portfolio optimization. Financial analysts journal, 48 (5):28–43, 1992. ",
+            "[8] Mathieu Blondel, Quentin Berthet, Marco Cuturi, Roy Frostig, Stephan Hoyer, Felipe Llinares-L´opez, Fabian Pedregosa, and Jean-Philippe Vert. Efficient and modular implicit differentiation. Advances in neural information processing systems, 35:5230–5242, 2022. ",
+            "[9] Christian Bongiorno, Efstratios Manolakis, and Rosario Nunzio Mantegna. End-to-end large portfolio optimization for variance minimization with neural networks through covariance cleaning. arXiv preprint arXiv:2507.01918, 2025. ",
+            "[10] Stephen Boyd, Enzo Busseti, Steven Diamond, Ronald N. Kahn, Kwangmoo Koh, Peter Nystrup, and Jan Speth. Multi-period trading via convex optimization, 2017. URL https://arxiv.org/ abs/1705.00109. ",
+            "[11] Joshua Brodie, Ingrid Daubechies, Christine De Mol, Domenico Giannone, and Ignace Loris. Sparse and stable markowitz portfolios. Proceedings of the National Academy of Sciences, 106(30):12267– 12272, 2009. ",
+            "[12] Giorgio Costa and Garud N Iyengar. Distributionally robust end-to-end portfolio construction. Quantitative Finance, 23(10):1465–1482, 2023. ",
+            "[13] Tianxiang Cui, Nanjiang Du, Xiaoying Yang, and Shusheng Ding. Multi-period portfolio optimization using a deep reinforcement learning hyper-heuristic approach. Technological Forecasting and Social Change, 198:122944, 2024. ",
+            "[14] George B Dantzig and Gerd Infanger. Multi-stage stochastic linear programs for portfolio optimization. Annals of Operations Research, 45(1):59–76, 1993. ",
+            "[15] Victor DeMiguel, Lorenzo Garlappi, and Raman Uppal. Optimal versus naive diversification: How inefficient is the 1/n portfolio strategy? The review of Financial studies, 22(5):1915–1953, 2009. ",
+            "[16] Adam N Elmachtoub and Paul Grigas. Smart “predict, then optimize”. Management Science, 68 (1):9–26, 2022. ",
+            "[17] Javier Estrada. Mean-semivariance behavior: Downside risk and capital asset pricing. International Review of Economics & Finance, 16(2):169–185, 2007. ",
+            "[18] Nicolae Gˆarleanu and Lasse Heje Pedersen. Dynamic trading with predictable returns and transaction costs. The Journal of Finance, 68(6):2309–2340, 2013. ",
+            "[19] Nikolaus Hautsch and Stefan Voigt. Large-scale portfolio allocation under transaction costs and model uncertainty. Journal of Econometrics, 212(1):221–240, 2019. ",
+            "[20] Ravi Jagannathan and Tongshu Ma. Risk reduction in large portfolios: Why imposing the wrong constraints helps. The journal of finance, 58(4):1651–1683, 2003. ",
+            "[21] Yifu Jiang, Jose Olmo, and Majed Atwi. High-dimensional multi-period portfolio allocation using deep reinforcement learning. International Review of Economics & Finance, 98:103996, 2025. ",
+            "[22] Taesung Kim, Jinhee Kim, Yunwon Tae, Cheonbok Park, Jang-Ho Choi, and Jaegul Choo. Reversible instance normalization for accurate time-series forecasting against distribution shift. In International Conference on Learning Representations, 2022. URL https://openreview.net/forum? id=cGDAkQo1C0p. ",
+            "[23] Diederik P Kingma and Jimmy L Ba. Adam: A method for stochastic optimization. In International Conference on Learning Representations (ICLR), 2015. ",
+            "[24] Daniel Kinn. Reducing estimation risk in mean-variance portfolios with machine learning. arXiv preprint arXiv:1804.01764, 2018. "
+        ],
+        "bbox": [
+            115,
+            83,
+            880,
+            903
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "page_number",
+        "text": "22 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "[25] Felix Kircher. Optimal portfolio selection with parameter estimation risks: Statistical modeling and empirical applications. PhD thesis, 2025. ",
+            "[26] Olivier Ledoit and Michael Wolf. Nonlinear shrinkage of the covariance matrix for portfolio selection: Markowitz meets goldilocks. The Review of Financial Studies, 30(12):4349–4388, 2017. ",
+            "[27] Junhyeong Lee, Inwoo Tae, and Yongjae Lee. Anatomy of machines for markowitz: Decision-focused learning for mean-variance portfolio optimization. arXiv preprint arXiv:2409.09684, 2024. ",
+            "[28] Edmond Lezmi, Thierry Roncalli, and Jiali Xu. Multi-period portfolio optimization. Available at SSRN 4078043, 2022. ",
+            "[29] Duan Li and Wan-Lung Ng. Optimal dynamic portfolio selection: Multiperiod mean-variance formulation. Mathematical finance, 10(3):387–406, 2000. ",
+            "[30] Xiaoyue Li, A Sinem Uysal, and John M Mulvey. Multi-period portfolio optimization using model predictive control with mean-variance and risk parity frameworks. European Journal of Operational Research, 299(3):1158–1176, 2022. ",
+            "[31] Zhe Li, Shiyi Qi, Yiduo Li, and Zenglin Xu. Revisiting long-term time series forecasting: An investigation on linear mapping, 2023. URL https://arxiv.org/abs/2305.10721. ",
+            "[32] Connor W. Magoon, Fengyu Yang, Noam Aigerman, and Shahar Z. Kovalsky. Differentiation through black-box quadratic programming solvers, 2025. URL https://arxiv.org/abs/2410.06324. ",
+            "[33] Harry Markowitz. Portfolio selection. The Journal of Finance, 7(1):77–91, 1952. ISSN 00221082, 15406261. URL http://www.jstor.org/stable/2975974. ",
+            "[34] Scott Murray, Yusen Xia, and Houping Xiao. Charting by machines. Journal of Financial Economics, 153:103791, 2024. ISSN 0304-405X. doi: https://doi.org/10.1016/j.jfineco.2024.103791. URL https: //www.sciencedirect.com/science/article/pii/S0304405X2400014X. ",
+            "[35] Arkadij Semenoviˇc Nemirovskij and David Borisovich Yudin. Problem complexity and method efficiency in optimization. 1983. ",
+            "[36] Razvan Oprisor and Roy Kwon. Multi-period portfolio optimization with investor views under regime switching. Journal of Risk and Financial Management, 14(1):3, 2020. ",
+            "[37] Jianming Pan, Zeqi Ye, Xiao Yang, Xu Yang, Weiqing Liu, Lewen Wang, and Jiang Bian. BPQP: A differentiable convex optimization framework for efficient end-to-end learning. In The Thirty-eighth Annual Conference on Neural Information Processing Systems, 2024. URL https://openreview. net/forum?id=VKKY3Uv7vi. ",
+            "[38] {A. Sinem} Uysal, Xiaoyue Li, and {John M.} Mulvey. End-to-end risk budgeting portfolio optimization with neural networks. Annals of Operations Research, 339(1-2):397–426, August 2024. ISSN 0254-5330. doi: 10.1007/s10479-023-05539-4. ",
+            "[39] Bo Wahlberg, Stephen Boyd, Mariette Annergren, and Yang Wang. An admm algorithm for a class of total variation regularized estimation problems*. IFAC Proceedings Volumes, 45(16):83– 88, 2012. ISSN 1474-6670. doi: https://doi.org/10.3182/20120711-3-BE-2027.00310. URL https: //www.sciencedirect.com/science/article/pii/S1474667015379325. 16th IFAC Symposium on System Identification. ",
+            "[40] Jiayang Yu and Kuo-Chu Chang. Neural network predictive modeling on dynamic portfolio management—a simulation-based portfolio optimization approach. Journal of Risk and Financial Management, 13(11):285, 2020. ",
+            "[41] Xun Yu Zhou and Duan Li. Continuous-time mean-variance portfolio selection: A stochastic lq framework. Applied Mathematics & Optimization, 42(1):19–33, 2000. "
+        ],
+        "bbox": [
+            115,
+            83,
+            882,
+            847
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "page_number",
+        "text": "23 ",
+        "bbox": [
+            489,
+            923,
+            507,
+            934
+        ],
+        "page_idx": 22
+    }
+]
