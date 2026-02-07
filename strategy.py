@@ -1,3 +1,29 @@
+"""
+脚本名称: strategy.py
+功能描述: 
+    定义各种投资策略的类，封装了策略的初始化、训练 (on_train_period) 和推理 (get_weights) 逻辑。
+    为回测引擎提供统一的接口，支持规则类、传统优化类和深度学习类策略。
+
+主要策略:
+    1. RuleBasedStrategy: 1/N, Risk Parity, Momentum 等无训练策略。
+    2. OptimizationStrategy: Mean-Variance, Mean-CVaR 等基于历史统计量的传统优化。
+    3. DeepMPOStrategy: Diff-MPO 策略，包含滚动微调 (Fine-tuning) 和推理逻辑。
+       - 在 on_train_period 中实现了带有 Realized Risk Penalty 的复合 Loss 训练。
+    4. DirectGradientStrategy: 直接梯度优化基准。
+    5. HRPStrategy: 层次风险平价。
+
+输入:
+    - 历史数据 (DataFrame) 或 特征张量 (Tensor)。
+    - DataLoader (用于 DeepMPO 的滚动训练)。
+
+输出:
+    - 目标持仓权重向量 (numpy array)。
+
+与其他脚本的关系:
+    - 依赖 model.py (加载网络结构) 和 train_diff_mpo.py (复用 Loss 函数)。
+    - 被 eval_rolling_all.py 调用，作为回测的对象。
+"""
+
 import numpy as np
 import pandas as pd
 import cvxpy as cp
@@ -366,7 +392,8 @@ class DeepMPOStrategy(BaseStrategy):
         
         # 使用较小的学习率进行微调，避免灾难性遗忘
         # 同时也因为我们是继承了去年的参数
-        optimizer = optim.Adam(self.model.parameters(), lr=5e-4)
+        fine_tune_lr = cfg.LEARNING_RATE * getattr(cfg, 'LR_FINE_TUNE_SCALE', 0.5)
+        optimizer = optim.Adam(self.model.parameters(), lr=fine_tune_lr)
         
         # 训练循环
         # 增加 Epochs 以确保充分适应新分布
@@ -414,13 +441,18 @@ class DeepMPOStrategy(BaseStrategy):
                 loss_realized_risk = torch.mean(violation**2)
 
                 # Total Loss
-                # 增加 1000.0 * loss_realized_risk
-                loss = loss_mpo + 1000.0 * loss_mse + 1000.0 * loss_realized_risk
+                # 降低 loss_realized_risk 的权重从 1000.0 到 20.0，与 train_diff_mpo.py 保持一致
+                # 避免 CVaR 惩罚淹没 Sharpe/Sortino 优化目标
+                loss = loss_mpo + 1000.0 * loss_mse + 20.0 * loss_realized_risk
                 
                 # Backward
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0) # 梯度裁剪
+                
+                # 梯度裁剪
+                grad_clip = getattr(cfg, 'GRAD_CLIP', 0.5)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
+                
                 optimizer.step()
                 
         # 训练结束后，模型保留参数，等待 daily inference

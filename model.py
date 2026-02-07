@@ -1,85 +1,115 @@
+"""
+脚本名称: model.py
+功能描述: 
+    定义神经网络模型架构，用于预测资产的收益率和协方差矩阵参数。
+    实现了 Diff-MPO 的核心思想："预测 -> 优化" 的端到端可微架构。
+
+主要类:
+    1. MPO_Network_Factor (推荐):
+       - Encoder: LSTM 提取市场时序特征。
+       - Heads: 预测预期收益率 (mu)、因子载荷 (B) 和特异性波动 (D)。
+       - Solver: 调用 DifferentiableMPO 层求解最优权重。
+       - 协方差构造: Sigma = B*B.T + D^2 (低秩近似，保证正定性)。
+    2. MPO_Transformer_Factor: 
+       - 基于 Transformer 的变体。
+    3. E2E_Network:
+       - 纯深度学习基准 (Policy Net)，直接输出权重，跳过优化器。
+
+输入:
+    - x: 历史特征张量 (Batch, Lookback, Features)。
+    - w_prev: 上一期持仓 (Batch, Assets)。
+
+输出:
+    - w_plan: 优化后的目标权重 (Batch, Horizon, Assets)。
+    - mu, L: 中间预测参数 (用于辅助 Loss 计算)。
+
+与其他脚本的关系:
+    - 依赖 config.py (超参) 和 mpo_solver.py (可微优化层)。
+    - 被 strategy.py 和 train_diff_mpo.py 实例化和调用。
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from config import cfg
-from mpo_solver import DifferentiableMPO
+from mpo_solver import DifferentiableMPO_cvx
 
-class MPO_Network(nn.Module):
-    def __init__(self):
-        super(MPO_Network, self).__init__()
+# class MPO_Network(nn.Module):
+#     def __init__(self):
+#         super(MPO_Network, self).__init__()
         
-        # 1. 特征提取器 (Feature Extractor)
-        # 输入: (Batch, Lookback, Features)
-        # 注意：这里的 input_size=13 必须和你 data_loader 里生成的特征列数一致
-        # 如果你只用了5个因子+VIX+利率等，要确保列数对齐。
-        # 这里建议写死或者从 data.shape 获取，暂时按 fetch_data 的默认列数 13
-        self.lstm = nn.LSTM(
-            input_size=cfg.INPUT_FEATURE_DIM, 
-            hidden_size=cfg.HIDDEN_DIM,
-            num_layers=cfg.NUM_LAYERS,
-            batch_first=True,
-            dropout=cfg.DROPOUT
-        )
+#         # 1. 特征提取器 (Feature Extractor)
+#         # 输入: (Batch, Lookback, Features)
+#         # 注意：这里的 input_size=13 必须和你 data_loader 里生成的特征列数一致
+#         # 如果你只用了5个因子+VIX+利率等，要确保列数对齐。
+#         # 这里建议写死或者从 data.shape 获取，暂时按 fetch_data 的默认列数 13
+#         self.lstm = nn.LSTM(
+#             input_size=cfg.INPUT_FEATURE_DIM, 
+#             hidden_size=cfg.HIDDEN_DIM,
+#             num_layers=cfg.NUM_LAYERS,
+#             batch_first=True,
+#             dropout=cfg.DROPOUT
+#         )
         
-        # 2. 预测头 (Prediction Heads)
+#         # 2. 预测头 (Prediction Heads)
         
-        # Head A: 预测收益率 mu (Batch, Horizon, Assets)
-        self.mu_head = nn.Sequential(
-            nn.Linear(cfg.HIDDEN_DIM, 32),
-            nn.ReLU(),
-            nn.Dropout(cfg.DROPOUT),
-            nn.Linear(32, cfg.PREDICT_HORIZON * cfg.NUM_ASSETS)
-        )
+#         # Head A: 预测收益率 mu (Batch, Horizon, Assets)
+#         self.mu_head = nn.Sequential(
+#             nn.Linear(cfg.HIDDEN_DIM, 32),
+#             nn.ReLU(),
+#             nn.Dropout(cfg.DROPOUT),
+#             nn.Linear(32, cfg.PREDICT_HORIZON * cfg.NUM_ASSETS)
+#         )
         
-        # Head B: 预测协方差因子 L (Batch, Horizon, Assets, Assets)
-        # ⚠️ 修复点：直接在这里计算 N的平方
-        num_l_params = cfg.PREDICT_HORIZON * (cfg.NUM_ASSETS * cfg.NUM_ASSETS)
+#         # Head B: 预测协方差因子 L (Batch, Horizon, Assets, Assets)
+#         # ⚠️ 修复点：直接在这里计算 N的平方
+#         num_l_params = cfg.PREDICT_HORIZON * (cfg.NUM_ASSETS * cfg.NUM_ASSETS)
         
-        self.L_head = nn.Sequential(
-            nn.Linear(cfg.HIDDEN_DIM, 64),
-            nn.ReLU(),
-            nn.Dropout(cfg.DROPOUT),
-            nn.Linear(64, num_l_params) 
-        )
+#         self.L_head = nn.Sequential(
+#             nn.Linear(cfg.HIDDEN_DIM, 64),
+#             nn.ReLU(),
+#             nn.Dropout(cfg.DROPOUT),
+#             nn.Linear(64, num_l_params) 
+#         )
         
-        # 3. 嵌入可微优化层
-        self.mpo_layer = DifferentiableMPO()
+#         # 3. 嵌入可微优化层
+#         self.mpo_layer = DifferentiableMPO()
         
-    def forward(self, x, w_prev):
-        """
-        x: (Batch, T, F) 历史特征 [GPU]
-        w_prev: (Batch, N) 上一期的持仓权重 [GPU]
-        """
-        batch_size = x.size(0)
+#     def forward(self, x, w_prev):
+#         """
+#         x: (Batch, T, F) 历史特征 [GPU]
+#         w_prev: (Batch, N) 上一期的持仓权重 [GPU]
+#         """
+#         batch_size = x.size(0)
         
-        # --- A. 编码 (Encoding) ---
-        # LSTM 依然在 GPU 上跑，享受加速
-        _, (h_n, _) = self.lstm(x)
-        context = h_n[-1] # (Batch, Hidden)
+#         # --- A. 编码 (Encoding) ---
+#         # LSTM 依然在 GPU 上跑，享受加速
+#         _, (h_n, _) = self.lstm(x)
+#         context = h_n[-1] # (Batch, Hidden)
         
-        # --- B. 预测参数 (Parameter Prediction) ---
+#         # --- B. 预测参数 (Parameter Prediction) ---
         
-        # 1. Mu (收益率)
-        mu = self.mu_head(context)
-        mu = mu.view(batch_size, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS)
+#         # 1. Mu (收益率)
+#         mu = self.mu_head(context)
+#         mu = mu.view(batch_size, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS)
         
-        # 2. L (协方差 Cholesky 因子)
-        L_flat = self.L_head(context)
-        L = L_flat.view(batch_size, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS, cfg.NUM_ASSETS)
+#         # 2. L (协方差 Cholesky 因子)
+#         L_flat = self.L_head(context)
+#         L = L_flat.view(batch_size, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS, cfg.NUM_ASSETS)
         
-        # --- C. 数学变换 (保证合法性) ---
-        mask = torch.tril(torch.ones_like(L))
-        L = L * mask 
+#         # --- C. 数学变换 (保证合法性) ---
+#         mask = torch.tril(torch.ones_like(L))
+#         L = L * mask 
         
-        diag_mask = torch.eye(cfg.NUM_ASSETS, device=x.device).view(1, 1, cfg.NUM_ASSETS, cfg.NUM_ASSETS)
-        L = L + diag_mask * (F.softplus(L) + 1e-5 - L) 
+#         diag_mask = torch.eye(cfg.NUM_ASSETS, device=x.device).view(1, 1, cfg.NUM_ASSETS, cfg.NUM_ASSETS)
+#         L = L + diag_mask * (F.softplus(L) + 1e-5 - L) 
         
-        # --- D. 优化 (Optimization) ---
-        # ⚠️ 关键优化：Solver 现在支持 GPU (FastDiffMPO)
-        # 传递 CVaR 限制 (Config 中定义)
-        w_plan = self.mpo_layer(mu, L, w_prev, cvar_limit=None)
+#         # --- D. 优化 (Optimization) ---
+#         # ⚠️ 关键优化：Solver 现在支持 GPU (FastDiffMPO)
+#         # 传递 CVaR 限制 (Config 中定义)
+#         w_plan = self.mpo_layer(mu, L, w_prev, cvar_limit=None)
         
-        return w_plan, mu, L
+#         return w_plan, mu, L
     
 
 class MPO_Network_Factor(nn.Module):
@@ -129,7 +159,7 @@ class MPO_Network_Factor(nn.Module):
         )
         
         # 3. 可微优化层 (cvxpylayers)
-        self.mpo_layer = DifferentiableMPO()
+        self.mpo_layer = DifferentiableMPO_cvx()
         
     def forward(self, x, w_prev):
         """
@@ -244,7 +274,7 @@ class MPO_Transformer_Factor(nn.Module):
         )
         
         # 4. 优化层
-        self.mpo_layer = DifferentiableMPO()
+        self.mpo_layer = DifferentiableMPO_cvx()
         
     def forward(self, x, w_prev):
         # x: (Batch, Lookback, Features)

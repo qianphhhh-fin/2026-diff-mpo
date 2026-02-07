@@ -1,3 +1,30 @@
+"""
+脚本名称: data_loader.py
+功能描述: 
+    负责数据的读取、清洗、标准化和 PyTorch DataLoader 的构建。
+    实现了自定义的 MPODataset 类，将时间序列数据转换为模型所需的 (X, Y) 样本对。
+
+主要任务:
+    1. 读取 'mpo_experiment_data.csv'。
+    2. 按时间划分训练集和测试集 (Time-series Split)。
+    3. 特征标准化 (StandardScaler)，防止数据泄露 (Fit on Train, Transform on Test)。
+    4. 构建滑动窗口样本:
+       - X: 过去 T 天的特征 (Batch, Lookback, Features)。
+       - Y: 未来 H 天的资产收益率 (Batch, Horizon, Assets)。
+
+输入:
+    - 'mpo_experiment_data.csv': 由 0_fetch_data.py 生成。
+    - config.py: 获取超参数 (Lookback, Horizon, Batch Size)。
+
+输出:
+    - train_loader, test_loader: PyTorch 数据加载器。
+    - scaler: 拟合好的标准化器，供后续推理使用。
+
+与其他脚本的关系:
+    - 输入来自 0_fetch_data.py。
+    - 输出提供给 train_diff_mpo.py (训练) 和 eval_rolling_all.py (回测)。
+"""
+
 import pandas as pd
 import numpy as np
 import torch

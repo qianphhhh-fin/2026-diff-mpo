@@ -3,7 +3,7 @@ import torch
 import cvxpy as cp
 import numpy as np
 from config import cfg
-from mpo_solver import DifferentiableMPO
+from mpo_solver import DifferentiableMPO_cvx
 
 def test_cvar_constraint():
     print("🧪 Testing CVaR Constraint in DifferentiableMPO...")
@@ -39,7 +39,7 @@ def test_cvar_constraint():
     
     # 3. 运行 Solver
     try:
-        solver = DifferentiableMPO()
+        solver = DifferentiableMPO_cvx()
         w_plan = solver(mu, L, w_prev)
         
         print("✅ Solver execution successful.")

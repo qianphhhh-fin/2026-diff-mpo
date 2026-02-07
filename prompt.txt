@@ -1,0 +1,278 @@
+
+# Empirical Evaluation Plan: Differentiable MPO vs. Benchmarks
+
+**Target Standards:** *Journal of Finance (JF)*, *Journal of Portfolio Management (JPM)*, *ICML*
+
+---
+
+## Panel A: Performance & Risk Overview (核心业绩)
+
+### 1. Figure 1: Cumulative Wealth Trajectories (净值曲线图)
+
+* **描述**：展示各策略在回测区间内的累计财富增长曲线。这是原来 `grand_challenge_wealth_curves.png` 的专业升级版。
+
+* **构建方式**：
+
+* 起点归一化为 $1.0$。
+
+* 使用 **对数坐标 (Log-Scale)** y轴（学术界更推荐，因为直线的斜率直接代表收益率）。
+
+* 突出显示 `Diff-MPO`（加粗、深色），其他 Baseline 使用虚线或浅色。
+
+* 底部增加“灰色阴影区域”表示市场回撤期（Drawdown Periods）。
+
+* **数据需求**：`backtest_daily_returns.csv`
+
+* **图表样式举例**：
+
+> 包含主图（净值）和子图（Roll-down / Underwater Plot）。
+
+> X轴：年份；Y轴：Log Wealth。
+
+### 2. Table 1: Summary Statistics (综合指标表)
+
+* **描述**：原来的指标表升级为标准的学术“描述性统计表”。需报告一阶矩至四阶矩及风险调整后收益。
+
+* **包含指标**：
+
+* **Return (Ann.)**: 年化几何平均收益率。
+
+* **Vol (Ann.)**: 年化标准差。
+
+* **Sharpe Ratio**: $\frac{E[R_p - R_f]}{\sigma_p}$ (需减去无风险利率)。
+
+* **Sortino Ratio**: 仅考虑下行波动。
+
+* **MaxDD**: 最大回撤。
+
+* **Calmar Ratio**: 年化收益 / Abs(最大回撤)。
+
+* **Skewness (偏度)**: 衡量“暴涨暴跌”的不对称性（Diff-MPO 是否有正偏度？）。
+
+* **Kurtosis (峰度)**: 衡量“肥尾”风险（是否经常发生极端事件）。
+
+* **Turnover (Ann.)**: 年化双边换手率。
+
+* **Break-even Cost (bps)**: 盈亏平衡成本 $\frac{\text{Excess Return}}{\text{Turnover}}$。
+
+* **数据需求**：`backtest_daily_returns.csv`, `backtest_daily_turnovers.csv`, `FF5-daily.csv` (列 `RF`)
+
+* **表格样式**：
+
+> 行：各策略（Diff-MPO, HRP, Mean-CVaR, etc.）。
+
+> 列：上述指标。
+
+> 格式：保留2位小数，最大值加粗 (Bold)。
+
+---
+
+## Panel B: Statistical Significance Tests (统计显著性检验)
+
+### 3. Table 2: Ledoit-Wolf Bootstrap Test for Sharpe Ratio Difference
+
+* **描述**：检验 Diff-MPO 的夏普比率是否**显著**高于 Benchmarks（排除运气成分）。这是 JF/JPM 的黄金标准。
+
+* **理论公式**：
+
+使用 **Circular Block Bootstrap** 方法生成 $B=10,000$ 个重采样样本。
+
+构建统计量 $\hat{\Delta} = \widehat{SR}_{MPO} - \widehat{SR}_{Benchmark}$。
+
+双侧 P值计算：$P = \frac{1}{B} \sum_{b=1}^B \mathbb{I}(|\hat{\Delta}^*_b - \hat{\Delta}| > |\hat{\Delta}|)$。
+
+* **数据需求**：`backtest_daily_returns.csv`, `FF5-daily.csv` (RF)
+
+* **表格样式**：
+
+> | Benchmark Strategy | Diff_SR | P-value | Significance |
+
+> | :--- | :---: | :---: | :---: |
+
+> | vs. HRP | +0.25 | 0.032 | ** |
+
+> | vs. 1/N | +0.41 | 0.001 | *** |
+
+> | vs. Mean-CVaR | +0.05 | 0.210 | |
+
+* **提出者/引用**：
+
+> Ledoit, O., & Wolf, M. (2008). Robust performance hypothesis testing with the Sharpe ratio. *Journal of Empirical Finance*, 15(5), 850-859.
+
+> [BibTeX: Ledoit2008Robust]
+
+### 4. Table 3: Diebold-Mariano Test for Predictive Accuracy
+
+* **描述**：检验策略收益序列本身是否显著优于基准（不仅仅是风险调整后）。
+
+* **构建方式**：比较两个序列的损失差分（Loss Differential）。此处 Loss 定义为负收益 $-r_t$ 或负效用。
+
+* **表格样式**：报告 DM-Statistic 和 P-value。
+
+* **提出者/引用**：
+
+> Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business & Economic Statistics*, 13(3), 253-263.
+
+---
+
+## Panel C: Factor Attribution & Alpha Analysis (因子归因)
+
+### 5. Table 4: Fama-French Five-Factor Regression
+
+* **描述**：通过回归分析，证明 Diff-MPO 的收益来源是 **Alpha (选股/择时能力)** 还是 **Beta (风格暴露)**。
+
+* **理论公式**：
+
+$$R_{p,t} - R_{f,t} = \alpha + \beta_{MKT}(R_{Mkt,t}-R_{f,t}) + \beta_{SMB}SMB_t + \beta_{HML}HML_t + \beta_{RMW}RMW_t + \beta_{CMA}CMA_t + \epsilon_t$$
+
+* **关键细节**：必须使用 **Newey-West HAC Standard Errors** 来调整 t-statistic，以修正序列自相关和异方差问题。
+
+* **数据需求**：`backtest_daily_returns.csv`, `FF5-daily.csv` (完整数据)
+
+* **表格样式**：
+
+> 列：Alpha (Ann. %), Beta_Mkt, Beta_SMB, Beta_HML, Beta_RMW, Beta_CMA, Adj. R-squared。
+
+> 单元格：系数 (t-stat)。显著系数打星号 (*)。
+
+> **重点**：如果 Diff-MPO 的 $\alpha$ 显著为正且 $R^2$ 较低，说明策略具有独特的非线性 Alpha。
+
+* **提出者/引用**：
+
+> Fama, E. F., & French, K. R. (2015). A five-factor asset pricing model. *Journal of Financial Economics*, 116(1), 1-22.
+
+---
+
+## Panel D: Tail Risk & Advanced Distributions (尾部风险)
+
+### 6. Figure 2: Return Distribution & Omega Ratio
+
+* **描述**：展示收益率的非正态分布特征。
+
+* **构建方式**：
+
+1.  **KDE Plot (核密度估计图)**：画出 Diff-MPO 与 Normal Distribution 及 HRP 的概率密度对比，观察是否有“肥尾”或“右偏”。
+
+2.  **Omega Ratio Curve**：绘制不同阈值 $L$ 下的 Omega Ratio。
+
+$\Omega(L) = \frac{\int_L^{\infty} (1-F(x)) dx}{\int_{-\infty}^L F(x) dx}$
+
+这比 Sharpe 更适合衡量非正态收益。
+
+* **数据需求**：`backtest_daily_returns.csv`
+
+* **提出者/引用**：
+
+> Keating, C., & Shadwick, W. F. (2002). A universal performance measure. *Journal of performance measurement*, 6(3), 59-84.
+
+### 7. Table 5: Extreme Risk Metrics (VaR & CVaR)
+
+* **描述**：量化极端情况下的潜在亏损。这对机构投资者（风险控）至关重要。
+
+* **包含指标**：
+
+* **VaR (95%)**: Value at Risk (Historical method or Cornish-Fisher expansion).
+
+* **CVaR (95%) / Expected Shortfall**: $\mathbb{E}[R | R \le \text{VaR}_{95\%}]$。
+
+* **Worst 5 Days**: 历史上最惨的5个单日跌幅。
+
+* **数据需求**：`backtest_daily_returns.csv`
+
+* **提出者/引用**：
+
+> Rockafellar, R. T., & Uryasev, S. (2000). Optimization of conditional value-at-risk. *Journal of risk*, 2, 21-41.
+
+---
+
+## Panel E: Robustness Checks (稳健性检验)
+
+### 8. Figure 3: Rolling Sharpe Ratio (滚动夏普)
+
+* **描述**：展示策略业绩的时变稳定性 (Time-Varying Performance)。
+
+* **构建方式**：
+
+计算 12个月（252天）或 24个月 的滚动窗口 Sharpe Ratio。
+
+绘制曲线图，观察 Diff-MPO 是否在某些年份（如 2022）崩盘。
+
+* **数据需求**：`backtest_daily_returns.csv`
+
+### 9. Table 6: Sub-period Analysis (子区间分析)
+
+* **描述**：将回测区间按市场状态切分，证明策略是“全天候”的。
+
+* **构建方式**：
+
+* **Bull Market**: e.g., 2019-2021.
+
+* **Bear Market**: e.g., 2022 (Inflation shock).
+
+* **Recovery/Sideways**: e.g., 2023-2025.
+
+* **表格样式**：
+
+> 汇报每个子区间的 Return 和 Sharpe。
+
+> 证明 Diff-MPO 在 Bear Market 下的回撤控制优于 MV 和 1/N。
+
+---
+
+## 参考文献 BibTeX (Template)
+
+```bibtex
+
+@article{ledoit2008robust,
+
+title={Robust performance hypothesis testing with the Sharpe ratio},
+
+author={Ledoit, Olivier and Wolf, Michael},
+
+journal={Journal of Empirical Finance},
+
+volume={15},
+
+number={5},
+
+pages={850--859},
+
+year={2008}
+
+}
+
+@article{fama2015five,
+
+title={A five-factor asset pricing model},
+
+author={Fama, Eugene F and French, Kenneth R},
+
+journal={Journal of Financial Economics},
+
+volume={116},
+
+number={1},
+
+pages={1--22},
+
+year={2015}
+
+}
+
+@article{rockafellar2000optimization,
+
+title={Optimization of conditional value-at-risk},
+
+author={Rockafellar, R Tyrrell and Uryasev, Stanislav},
+
+journal={Journal of risk},
+
+volume={2},
+
+pages={21--41},
+
+year={2000}
+
+}
+
+按照以上方案生成检验用的代码（基于result中的backtest_daily_returns.csv、backtest_daily_turnovers.csv和FF5-daily.csv)，不要运行，因为eval还没跑完。每个检验都单独设立一个py脚本 （命名：eval_xxxx.py），需要严格按照以上方案进行构建, 所有脚本最后都需要输出tex表格或图片，表格和图需要符合顶级科研审美，分别保存在 tex 的fig和tab中

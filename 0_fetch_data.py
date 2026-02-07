@@ -1,3 +1,26 @@
+"""
+脚本名称: 0_fetch_data.py
+功能描述: 
+    负责从本地目录和网络数据源获取原始金融数据，并进行预处理和合并，生成统一的实验数据集。
+    主要任务包括：
+    1. 读取清洗后的 Fama-French 因子数据 (本地 CSV)。
+    2. 下载 FRED 宏观经济数据 (VIX, 10Y Yield, Credit Spread)。
+    3. 下载 SPY 市场数据并计算技术指标 (滚动收益率、波动率)。
+    4. 合并所有数据源，进行对齐和填充，生成最终的 CSV 文件。
+
+输入:
+    - 本地目录 'data/raw_data/' 下的 CSV 文件 (Portfolios_Formed_on_*.csv)。
+    - 网络数据源 (FRED API, Yahoo Finance)。
+
+输出:
+    - 'mpo_experiment_data.csv': 合并后的完整数据集，供 config.py 和 data_loader.py 使用。
+    - 'data/macro_features.csv', 'data/market_technicals.csv': 中间过程文件。
+
+与其他脚本的关系:
+    - 前置脚本: 无 (这是流水线的第一步)。
+    - 后继脚本: 生成的数据被 config.py 引用，并由 data_loader.py 读取以构建 PyTorch Dataset。
+"""
+
 import pandas as pd
 import yfinance as yf
 import requests

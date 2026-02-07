@@ -1,3 +1,32 @@
+"""
+脚本名称: mpo_solver.py
+功能描述: 
+    实现可微多周期优化 (Differentiable MPO) 的核心求解器。
+    通过自定义 PyTorch Autograd Function，实现了前向求解 (Forward) 和反向传播 (Backward)。
+
+主要组件:
+    1. DifferentiableMPO (nn.Module): 
+       - 封装了求解器的接口。
+       - solve_forward_md: 实现基于镜像下降 (Mirror Descent) 的快速前向求解器，支持 GPU 加速。
+    2. MDFPIdentity (autograd.Function):
+       - forward: 调用 solve_forward_md 计算最优权重 w*。
+       - backward: 使用隐函数定理 (Implicit Function Theorem) 和 Neumann 级数近似，
+         高效计算 Loss 对输入参数 (mu, L, w_prev) 的梯度。
+
+输入:
+    - mu: 预测收益率。
+    - L: 预测协方差的 Cholesky 因子。
+    - w_prev: 初始持仓。
+    - cvar_limit: 风险约束上限。
+
+输出:
+    - w_star: 最优投资组合权重，带有梯度信息。
+
+与其他脚本的关系:
+    - 被 model.py 调用，作为神经网络的最后一层 (Optimization Layer)。
+    - 依赖 config.py 获取优化参数 (Gamma, Cost Coeff, CVaR Penalty)。
+"""
+
 import torch
 import torch.nn as nn
 from scipy.stats import norm
@@ -27,6 +56,7 @@ class MDFPIdentity(torch.autograd.Function):
             gamma = cfg_dict['gamma']
             cost_coeff = cfg_dict['cost_coeff']
             kappa = cfg_dict['kappa']
+            cvar_penalty = cfg_dict.get('cvar_penalty', 50.0) # 使用 Config 配置
             
             # --- A. Define Objective Gradient \nabla_w F(w) ---
             w = w_star.detach().clone().requires_grad_(True)
@@ -48,19 +78,21 @@ class MDFPIdentity(torch.autograd.Function):
             diff = w - w_shifted
             loss_cost = torch.sum(torch.sqrt(diff**2 + 1e-8))
             
-            # 4. CVaR Penalty: 100 * Softplus(-mu_p + kappa*sigma_p - limit)
-            # Using Softplus for better Hessian properties than ReLU
-            mu_p = (mu * w).sum(dim=-1) # (B, H)
-            sigma_p = torch.norm(L_T_w.squeeze(-1), p=2, dim=-1) # (B, H)
-            
-            limit_val = cvar_limit if cvar_limit.dim() > 0 else cvar_limit.unsqueeze(0)
-            # Broadcast limit_val to (B, H) if necessary
-            if limit_val.dim() == 1:
-                limit_val = limit_val.unsqueeze(1)
-            
-            violation = -mu_p + kappa * sigma_p - limit_val
-            # Softplus approximation of ReLU for smoothness
-            loss_cvar = 100.0 * torch.nn.functional.softplus(violation, beta=50).sum()
+            # 4. CVaR Penalty: cvar_penalty * Softplus(-mu_p + kappa*sigma_p - limit)
+            if cvar_penalty > 1e-6:
+                mu_p = (mu * w).sum(dim=-1) # (B, H)
+                sigma_p = torch.norm(L_T_w.squeeze(-1), p=2, dim=-1) # (B, H)
+                
+                limit_val = cvar_limit if cvar_limit.dim() > 0 else cvar_limit.unsqueeze(0)
+                # Broadcast limit_val to (B, H) if necessary
+                if limit_val.dim() == 1:
+                    limit_val = limit_val.unsqueeze(1)
+                
+                violation = -mu_p + kappa * sigma_p - limit_val
+                # Softplus approximation of ReLU for smoothness
+                loss_cvar = cvar_penalty * torch.nn.functional.softplus(violation, beta=50).sum()
+            else:
+                loss_cvar = 0.0
             
             F = loss_ret + gamma * loss_risk + cost_coeff * loss_cost + loss_cvar
             
@@ -143,7 +175,8 @@ class DifferentiableMPO(nn.Module):
         self.cfg_dict = {
             'gamma': cfg.RISK_AVERSION,
             'cost_coeff': cfg.COST_COEFF,
-            'kappa': norm.pdf(norm.ppf(cfg.CVAR_CONFIDENCE)) / (1 - cfg.CVAR_CONFIDENCE)
+            'kappa': norm.pdf(norm.ppf(cfg.CVAR_CONFIDENCE)) / (1 - cfg.CVAR_CONFIDENCE),
+            'cvar_penalty': getattr(cfg, 'CVAR_PENALTY', 50.0) # [NEW]
         }
             
     def solve_forward_md(self, mu, L, w_prev, cvar_limit, max_iters=300, tol=1e-6):
@@ -161,6 +194,7 @@ class DifferentiableMPO(nn.Module):
         gamma = self.cfg_dict['gamma']
         cost_coeff = self.cfg_dict['cost_coeff']
         kappa = self.cfg_dict['kappa']
+        cvar_penalty = self.cfg_dict.get('cvar_penalty', 50.0)
         
         for k in range(max_iters):
             # Compute Gradient of F w.r.t w
@@ -177,11 +211,15 @@ class DifferentiableMPO(nn.Module):
                 loss_cost = torch.sum(torch.sqrt(diff**2 + 1e-8))
                 
                 mu_p = (mu * w_var).sum(dim=-1)
-                sigma_p = torch.norm(L_T_w.squeeze(-1), p=2, dim=-1)
-                limit_val = cvar_limit if cvar_limit.dim() > 0 else cvar_limit.unsqueeze(0)
-                if limit_val.dim() == 1: limit_val = limit_val.unsqueeze(1)
-                violation = -mu_p + kappa * sigma_p - limit_val
-                loss_cvar = 100.0 * torch.nn.functional.softplus(violation, beta=50).sum()
+                
+                if cvar_penalty > 1e-6:
+                    sigma_p = torch.norm(L_T_w.squeeze(-1), p=2, dim=-1)
+                    limit_val = cvar_limit if cvar_limit.dim() > 0 else cvar_limit.unsqueeze(0)
+                    if limit_val.dim() == 1: limit_val = limit_val.unsqueeze(1)
+                    violation = -mu_p + kappa * sigma_p - limit_val
+                    loss_cvar = cvar_penalty * torch.nn.functional.softplus(violation, beta=50).sum()
+                else:
+                    loss_cvar = 0.0
                 
                 F = loss_ret + gamma * loss_risk + cost_coeff * loss_cost + loss_cvar
                 
@@ -218,48 +256,235 @@ class DifferentiableMPO(nn.Module):
         return MDFPIdentity.apply(mu, L, w_prev, cvar_limit, w_star_batch, self.H, self.N, self.cfg_dict)
 
 # ==========================
+# CvxpyLayer 实现 (Benchmark)
+# ==========================
+class DifferentiableMPO_cvx(nn.Module):
+    def __init__(self):
+        super(DifferentiableMPO_cvx, self).__init__()
+        try:
+            import cvxpy as cp
+            from cvxpylayers.torch import CvxpyLayer
+        except ImportError:
+            raise ImportError("请先安装 cvxpy 和 cvxpylayers: pip install cvxpy cvxpylayers")
+
+        self.H = cfg.PREDICT_HORIZON
+        self.N = cfg.NUM_ASSETS
+        self.cfg_dict = {
+            'gamma': cfg.RISK_AVERSION,
+            'cost_coeff': cfg.COST_COEFF,
+            'kappa': norm.pdf(norm.ppf(cfg.CVAR_CONFIDENCE)) / (1 - cfg.CVAR_CONFIDENCE),
+            'cvar_penalty': getattr(cfg, 'CVAR_PENALTY', 50.0)
+        }
+        
+        # 1. 定义参数 (Parameters)
+        self.mu_param = cp.Parameter((self.H, self.N))
+        self.L_param = cp.Parameter((self.H, self.N, self.N))
+        self.w_prev_param = cp.Parameter(self.N)
+        self.cvar_limit_param = cp.Parameter() 
+        
+        # 2. 定义变量 (Variables)
+        self.w_var = cp.Variable((self.H, self.N))
+        
+        # 3. 构建目标函数
+        obj = 0
+        
+        # (1) Return: -mu^T w
+        obj += -cp.sum(cp.multiply(self.mu_param, self.w_var))
+        
+        # (2) Risk: gamma * sum(||L_t^T w_t||^2)
+        risk_term = 0
+        for t in range(self.H):
+            # L_t: (N, N), w_t: (N,)
+            risk_term += cp.sum_squares(self.L_param[t].T @ self.w_var[t])
+        obj += self.cfg_dict['gamma'] * risk_term
+        
+        # (3) Cost: cost_coeff * sum(||w_t - w_{t-1}||_1)
+        cost_term = 0
+        # t=0
+        cost_term += cp.norm(self.w_var[0] - self.w_prev_param, 1)
+        # t=1..H-1
+        for t in range(1, self.H):
+            cost_term += cp.norm(self.w_var[t] - self.w_var[t-1], 1)
+        obj += self.cfg_dict['cost_coeff'] * cost_term
+        
+        # (4) CVaR Penalty
+        if self.cfg_dict['cvar_penalty'] > 1e-6:
+            cvar_term = 0
+            for t in range(self.H):
+                mu_p = self.mu_param[t] @ self.w_var[t]
+                sigma_p = cp.norm(self.L_param[t].T @ self.w_var[t], 2)
+                violation = -mu_p + self.cfg_dict['kappa'] * sigma_p - self.cvar_limit_param
+                
+                # Softplus(x, beta=50) = 1/50 * log(1 + exp(50*x))
+                # using logistic: log(1+exp(x))
+                cvar_term += (1.0/50.0) * cp.logistic(50.0 * violation)
+            obj += self.cfg_dict['cvar_penalty'] * cvar_term
+            
+        # 4. 约束条件
+        constraints = [
+            cp.sum(self.w_var, axis=1) == 1,
+            self.w_var >= 0
+        ]
+        
+        # 5. 初始化 Layer
+        problem = cp.Problem(cp.Minimize(obj), constraints)
+        
+        # 动态构建参数列表：只有真正参与计算的参数才传给 CvxpyLayer
+        param_list = [self.mu_param, self.L_param, self.w_prev_param]
+        if self.cfg_dict['cvar_penalty'] > 1e-6:
+             param_list.append(self.cvar_limit_param)
+             
+        self.layer = CvxpyLayer(
+            problem, 
+            parameters=param_list, 
+            variables=[self.w_var]
+        )
+        
+    def forward(self, mu, L, w_prev, cvar_limit=None):
+        if cvar_limit is None:
+            cvar_limit = torch.tensor(cfg.CVAR_LIMIT, device=mu.device, dtype=mu.dtype)
+        if cvar_limit.dim() == 0:
+            cvar_limit = cvar_limit.expand(mu.size(0))
+            
+        # 调用 CvxpyLayer
+        # 根据 cvar_penalty 决定是否传递 cvar_limit
+        if self.cfg_dict['cvar_penalty'] > 1e-6:
+            w_star, = self.layer(mu, L, w_prev, cvar_limit)
+        else:
+            w_star, = self.layer(mu, L, w_prev)
+            
+        return w_star
+
+# ==========================
 # 单元测试 (Unit Test)
 # ==========================
 if __name__ == "__main__":
-    print("🧪 开始测试 mpo_solver 模块 (Fast MDFP Implementation)...")
+    import time
+    import numpy as np
+    
+    # 设置打印精度
+    torch.set_printoptions(precision=4, sci_mode=False)
+    
+    print("🧪 开始对比测试: Mirror Descent (MD) vs CvxpyLayer (CVX)...")
     
     # 1. 模拟 Batch 数据
-    B, H, N = 2, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS
+    # 使用较小的 Batch 以便 CVX 跑得动 (CVX Batch 性能较差)
+    B, H, N = 4, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS
     device = cfg.DEVICE
+    print(f"   Batch={B}, Horizon={H}, Assets={N}, Device={device}")
     
-    # 模拟预测的 Mu (需要梯度)
+    # 模拟输入 (需要梯度)
     mu = torch.randn(B, H, N, requires_grad=True, dtype=torch.float32, device=device)
-    
-    # 模拟预测的 L (需要梯度) - 初始化为单位阵附近
     L = torch.eye(N, device=device).view(1, 1, N, N).repeat(B, H, 1, 1)
+    # 增加一点随机性给 L
+    L = L + 0.1 * torch.randn_like(L)
     L.requires_grad = True
     
-    # 初始权重 (不需要梯度)
     w0 = torch.ones(B, N, dtype=torch.float32, device=device) / N
+    w0.requires_grad = True # 也可以测试对 w_prev 的梯度
     
-    # 2. 实例化 Solver
-    solver = DifferentiableMPO().to(device)
-    print("✅ Solver 初始化成功")
+    # 2. 实例化 Solvers
+    print("\n📦 初始化 Solvers...")
+    solver_md = DifferentiableMPO().to(device)
     
-    # 3. 前向传播
-    start_t = torch.cuda.Event(enable_timing=True) if device=='cuda' else None
-    end_t = torch.cuda.Event(enable_timing=True) if device=='cuda' else None
-    
-    if start_t: start_t.record()
-    w_plan = solver(mu, L, w0)
-    if end_t: end_t.record(); torch.cuda.synchronize()
-    
-    print(f"✅ 前向传播成功. Output Shape: {w_plan.shape} (Expected: {B, H, N})")
-    
-    # 4. 反向传播测试
-    # 构造一个假的 Loss: 希望 w 的第一个资产权重越大越好
-    loss = -w_plan[:, :, 0].sum()
-    loss.backward()
-    
-    print("✅ 反向传播成功")
-    print(f"   Gradient of mu exists: {mu.grad is not None}")
-    print(f"   Gradient of L exists: {L.grad is not None}")
-    if mu.grad is not None:
-        print(f"   mu grad sample norm: {mu.grad.norm().item()}")
-    
-    print("\n🚀 mpo_solver 模块升级完成！(FastDiffMPO Integrated)")
+    try:
+        solver_cvx = DifferentiableMPO_cvx().to(device)
+        has_cvx = True
+        print("   ✅ DifferentiableMPO_cvx 加载成功")
+    except Exception as e:
+        print(f"   ⚠️ DifferentiableMPO_cvx 加载失败: {e}")
+        has_cvx = False
+        
+    if has_cvx:
+        # ==========================
+        # 3. 前向传播速度对比
+        # ==========================
+        print("\n🏎️  Forward Pass Speed Test (Avg of 10 runs)")
+        
+        # MD Warmup
+        _ = solver_md(mu, L, w0)
+        
+        # MD Timing
+        torch.cuda.synchronize() if device=='cuda' else None
+        t0 = time.time()
+        for _ in range(10):
+            w_md = solver_md(mu, L, w0)
+        torch.cuda.synchronize() if device=='cuda' else None
+        t_md = (time.time() - t0) / 10
+        print(f"   🔹 Mirror Descent (Ours): {t_md*1000:.2f} ms")
+        
+        # CVX Warmup
+        # CVX 第一次运行通常很慢 (Canonicalization)，Warmup 很重要
+        _ = solver_cvx(mu, L, w0)
+        
+        # CVX Timing
+        torch.cuda.synchronize() if device=='cuda' else None
+        t0 = time.time()
+        for _ in range(10):
+            w_cvx = solver_cvx(mu, L, w0)
+        torch.cuda.synchronize() if device=='cuda' else None
+        t_cvx = (time.time() - t0) / 10
+        print(f"   🔸 CvxpyLayer (Ref)   : {t_cvx*1000:.2f} ms")
+        print(f"   🚀 Speedup: {t_cvx / t_md:.1f}x")
+        
+        # ==========================
+        # 4. 结果一致性对比
+        # ==========================
+        print("\n🔍 Result Consistency Check")
+        # 比较 w_md 和 w_cvx
+        diff = torch.norm(w_md - w_cvx) / (torch.norm(w_cvx) + 1e-8)
+        print(f"   Rel. Norm Diff: {diff.item():.6f}")
+        if diff < 1e-2:
+            print("   ✅ Results match closely.")
+        else:
+            print("   ⚠️ Results might differ (check constraints/parameters).")
+            
+        # ==========================
+        # 5. 反向传播速度与梯度对比
+        # ==========================
+        print("\n📉 Backward Pass & Gradient Check")
+        
+        # 构造 Loss
+        target = torch.rand_like(w_md)
+        target = target / target.sum(dim=-1, keepdim=True)
+        
+        # --- MD Backward ---
+        loss_md = torch.sum((w_md - target)**2)
+        
+        # 清零梯度
+        if mu.grad is not None: mu.grad.zero_()
+        if L.grad is not None: L.grad.zero_()
+        
+        torch.cuda.synchronize() if device=='cuda' else None
+        t0 = time.time()
+        loss_md.backward(retain_graph=True)
+        torch.cuda.synchronize() if device=='cuda' else None
+        t_md_back = time.time() - t0
+        print(f"   🔹 MD Backward Time : {t_md_back*1000:.2f} ms")
+        
+        grad_mu_md = mu.grad.clone()
+        mu.grad.zero_() # Reset for CVX
+        
+        # --- CVX Backward ---
+        # 必须重新计算 Graph，因为 w_cvx 和 w_md 是不同的计算图节点
+        # 为了公平，我们这里直接对 w_cvx backward
+        loss_cvx = torch.sum((w_cvx - target)**2)
+        
+        torch.cuda.synchronize() if device=='cuda' else None
+        t0 = time.time()
+        loss_cvx.backward()
+        torch.cuda.synchronize() if device=='cuda' else None
+        t_cvx_back = time.time() - t0
+        print(f"   🔸 CVX Backward Time: {t_cvx_back*1000:.2f} ms")
+        
+        grad_mu_cvx = mu.grad.clone()
+        
+        # --- Gradient Comparison ---
+        grad_diff = torch.norm(grad_mu_md - grad_mu_cvx) / (torch.norm(grad_mu_cvx) + 1e-6)
+        print(f"   Gradient Rel. Diff (Mu): {grad_diff.item():.6f}")
+        
+        # Cosine Similarity
+        cos_sim = torch.nn.functional.cosine_similarity(grad_mu_md.flatten(), grad_mu_cvx.flatten(), dim=0)
+        print(f"   Gradient Cosine Sim    : {cos_sim.item():.4f}")
+        
+    print("\nDone.")

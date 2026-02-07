@@ -1,3 +1,31 @@
+"""
+脚本名称: train_diff_mpo.py
+功能描述: 
+    Diff-MPO 模型的独立训练脚本 (Pre-training)。
+    用于在回测开始前，在整个训练集上对模型进行预训练，或者进行超参数调试。
+
+主要功能:
+    1. calc_composite_loss: 定义复合损失函数 (Sortino + MaxDD + Turnover)。
+    2. train: 主训练循环。
+       - 加载数据。
+       - 前向传播 (Model -> Solver)。
+       - 计算 Loss (包含 MSE, MPO Loss, CVaR Penalty)。
+       - 反向传播与参数更新。
+       - 保存训练好的模型权重。
+
+输入:
+    - data_loader.py 提供的数据。
+    - config.py 的配置。
+
+输出:
+    - 训练好的模型文件 'models/diff_mpo_sharpe.pth'。
+    - 训练 Loss 曲线图 'diff_mpo_training_loss.png'。
+
+与其他脚本的关系:
+    - 独立运行的入口脚本。
+    - 其 calc_composite_loss 函数被 strategy.py 复用。
+"""
+
 import torch
 import torch.optim as optim
 import numpy as np
@@ -7,7 +35,7 @@ import os
 
 from config import cfg
 from data_loader import load_and_process_data
-from model import MPO_Network
+from model import MPO_Network_Factor
 
 # ==========================
 # 1. 定义复合损失函数 (Composite Loss)
@@ -96,7 +124,7 @@ def train():
     train_loader, test_loader, _ = load_and_process_data()
     
     # 初始化模型
-    model = MPO_Network().to(cfg.DEVICE).double() 
+    model = MPO_Network_Factor().to(cfg.DEVICE).double() 
     optimizer = optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE)
     
     print(f"🚀 模型已加载至 {cfg.DEVICE}. 开始训练 {cfg.EPOCHS} Epochs...")
@@ -149,7 +177,8 @@ def train():
             loss.backward()
             
             # 梯度裁剪 (关键！防止 MaxDD 导致的梯度爆炸)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+            grad_clip = getattr(cfg, 'GRAD_CLIP', 0.5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
             
             optimizer.step()
             

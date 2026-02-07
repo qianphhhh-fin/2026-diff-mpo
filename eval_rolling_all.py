@@ -1,7 +1,37 @@
+"""
+脚本名称: eval_rolling_all.py
+功能描述: 
+    "Grand Challenge" 滚动回测主引擎。
+    在真实的时间轴上模拟交易，对比 Diff-MPO 与其他基准策略的绩效。
+
+主要流程:
+    1. 初始化所有策略 (Diff-MPO, Mean-Var, 1/N 等)。
+    2. 按年份进行滚动回测 (Walk-Forward Validation):
+       - 每年初，使用过去的数据对 DeepMPO 进行微调 (Retraining)。
+       - 每日进行推理，获取目标权重。
+       - 模拟交易，计算每日收益和换手率。
+    3. 绩效评估: 计算 Sharpe, Sortino, Calmar, MaxDD, Turnover 等指标。
+    4. 可视化: 绘制净值曲线并保存结果。
+
+输入:
+    - 'mpo_experiment_data.csv' (原始数据)。
+    - 策略定义 (strategy.py)。
+
+输出:
+    - 绩效指标表格 (控制台打印 & CSV 保存)。
+    - 净值曲线图 'results/grand_challenge_wealth_curves.png'。
+    - 每日收益和换手率序列 CSV。
+
+与其他脚本的关系:
+    - 项目的最终出口，整合了 data_loader, strategy, model, mpo_solver 等所有模块。
+"""
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import random
+import os
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
@@ -20,6 +50,18 @@ from strategy import (
 
 # 设置绘图风格
 plt.style.use('seaborn-v0_8')
+
+def seed_everything(seed=42):
+    """固定所有随机种子以保证结果可复现"""
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # 保证 CuDNN 的确定性 (会牺牲一点速度)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def calculate_metrics(returns_series, turnover_series, name):
     """计算回测指标"""
@@ -68,6 +110,10 @@ def calculate_metrics(returns_series, turnover_series, name):
     }
 
 def run_comprehensive_backtest():
+    # 1. 设置随机种子
+    seed_everything(cfg.SEED)
+    print(f"🔒 Random Seed set to {cfg.SEED}")
+
     print("⚔️ [Grand Challenge] 滚动回测竞技场启动 ...")
     print(f"   Device: {cfg.DEVICE}")
     print(f"   Transaction Cost: {cfg.COST_COEFF * 10000:.0f} bps")
@@ -269,7 +315,22 @@ def run_comprehensive_backtest():
     
     # 保存 CSV
     metrics_df.to_csv("rolling_backtest_metrics.csv", index=False)
+    metrics_df.to_csv("results/rolling_backtest_metrics.csv", index=False)
     
+    # --- 保存原始序列 (New) ---
+    print("\n💾 保存原始序列数据...")
+    try:
+        # 构造 DataFrame (使用对齐后的日期索引)
+        returns_df = pd.DataFrame(results, index=plot_dates)
+        turnovers_df = pd.DataFrame(turnovers, index=plot_dates)
+        
+        returns_df.to_csv("results/backtest_daily_returns.csv")
+        turnovers_df.to_csv("results/backtest_daily_turnovers.csv")
+        print("   -> results/backtest_daily_returns.csv (日收益率)")
+        print("   -> results/backtest_daily_turnovers.csv (日换手率)")
+    except Exception as e:
+        print(f"⚠️ 保存原始序列失败: {e}")
+
     # --- 绘图 ---
     plt.figure(figsize=(14, 8))
     
@@ -288,7 +349,7 @@ def run_comprehensive_backtest():
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     
-    save_path = "grand_challenge_wealth_curves.png"
+    save_path = "results/grand_challenge_wealth_curves.png"
     plt.savefig(save_path, dpi=300)
     print(f"\n📈 净值曲线已保存至: {save_path}")
 
