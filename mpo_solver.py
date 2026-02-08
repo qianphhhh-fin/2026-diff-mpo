@@ -285,40 +285,34 @@ class DifferentiableMPO_cvx(nn.Module):
         # 2. 定义变量 (Variables)
         self.w_var = cp.Variable((self.H, self.N))
         
-        # 3. 构建目标函数
+        # 3. 构建目标函数 (Loss_QP: Min Variance + L2 Cost)
+        # 不再包含收益率项 (-mu^T w)
+        # 神经网络只需要预测 Sigma (L)，通过调整风险结构来间接优化 Sortino
         obj = 0
         
-        # (1) Return: -mu^T w
-        obj += -cp.sum(cp.multiply(self.mu_param, self.w_var))
-        
-        # (2) Risk: gamma * sum(||L_t^T w_t||^2)
+        # (1) Risk: sum(||L_t^T w_t||^2)
+        # 这现在是主要的驱动项
         risk_term = 0
         for t in range(self.H):
             # L_t: (N, N), w_t: (N,)
             risk_term += cp.sum_squares(self.L_param[t].T @ self.w_var[t])
-        obj += self.cfg_dict['gamma'] * risk_term
+        obj += risk_term
         
-        # (3) Cost: cost_coeff * sum(||w_t - w_{t-1}||_1)
+        # (2) Cost: L2 Penalty (Smooth)
+        # 使用 L2 Norm 替代 L1，保证 QP 性质
         cost_term = 0
         # t=0
-        cost_term += cp.norm(self.w_var[0] - self.w_prev_param, 1)
+        cost_term += cp.sum_squares(self.w_var[0] - self.w_prev_param)
         # t=1..H-1
         for t in range(1, self.H):
-            cost_term += cp.norm(self.w_var[t] - self.w_var[t-1], 1)
-        obj += self.cfg_dict['cost_coeff'] * cost_term
+            cost_term += cp.sum_squares(self.w_var[t] - self.w_var[t-1])
+            
+        # Cost Coeff 需要根据 L2 的量级重新调整，这里暂时保持 Config 读取
+        # 但通常 L2 cost 需要更大的系数才能与 Risk 平衡
+        obj += self.cfg_dict['cost_coeff'] * 10.0 * cost_term
         
-        # (4) CVaR Penalty
-        if self.cfg_dict['cvar_penalty'] > 1e-6:
-            cvar_term = 0
-            for t in range(self.H):
-                mu_p = self.mu_param[t] @ self.w_var[t]
-                sigma_p = cp.norm(self.L_param[t].T @ self.w_var[t], 2)
-                violation = -mu_p + self.cfg_dict['kappa'] * sigma_p - self.cvar_limit_param
-                
-                # Softplus(x, beta=50) = 1/50 * log(1 + exp(50*x))
-                # using logistic: log(1+exp(x))
-                cvar_term += (1.0/50.0) * cp.logistic(50.0 * violation)
-            obj += self.cfg_dict['cvar_penalty'] * cvar_term
+        # (3) CVaR Penalty (REMOVED)
+        # 移除了 CVaR 项，保持 Solver 为纯 QP
             
         # 4. 约束条件
         constraints = [
@@ -327,32 +321,20 @@ class DifferentiableMPO_cvx(nn.Module):
         ]
         
         # 5. 初始化 Layer
+        # 注意：不再传入 mu_param 和 cvar_limit_param
         problem = cp.Problem(cp.Minimize(obj), constraints)
-        
-        # 动态构建参数列表：只有真正参与计算的参数才传给 CvxpyLayer
-        param_list = [self.mu_param, self.L_param, self.w_prev_param]
-        if self.cfg_dict['cvar_penalty'] > 1e-6:
-             param_list.append(self.cvar_limit_param)
-             
         self.layer = CvxpyLayer(
             problem, 
-            parameters=param_list, 
+            parameters=[self.L_param, self.w_prev_param], 
             variables=[self.w_var]
         )
         
     def forward(self, mu, L, w_prev, cvar_limit=None):
-        if cvar_limit is None:
-            cvar_limit = torch.tensor(cfg.CVAR_LIMIT, device=mu.device, dtype=mu.dtype)
-        if cvar_limit.dim() == 0:
-            cvar_limit = cvar_limit.expand(mu.size(0))
-            
+        # 兼容接口：虽然不再使用 mu 和 cvar_limit，但保持函数签名一致
+        # mu: (Batch, H, N) -> IGNORED
+        
         # 调用 CvxpyLayer
-        # 根据 cvar_penalty 决定是否传递 cvar_limit
-        if self.cfg_dict['cvar_penalty'] > 1e-6:
-            w_star, = self.layer(mu, L, w_prev, cvar_limit)
-        else:
-            w_star, = self.layer(mu, L, w_prev)
-            
+        w_star, = self.layer(L, w_prev)
         return w_star
 
 # ==========================

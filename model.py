@@ -177,8 +177,9 @@ class MPO_Network_Factor(nn.Module):
         # --- 2. Parameter Prediction ---
         
         # A. 预测 Mu
-        mu = self.mu_head(context)
-        mu = mu.view(batch_size, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS)
+        # [MODIFIED] 不再预测有意义的 Mu，因为 Solver 已经不使用它
+        # 我们可以输出全 0，或者为了兼容性输出一个 dummy mu
+        mu = torch.zeros(batch_size, cfg.PREDICT_HORIZON, cfg.NUM_ASSETS, device=x.device, dtype=x.dtype)
         
         # B. 预测 Sigma (通过因子模型)
         # B: (Batch, H, N, K)
